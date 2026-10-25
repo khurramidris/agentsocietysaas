@@ -1,0 +1,172 @@
+/* Host theme for the embedded upstream webviews: VS Code normally injects these
+   variables; values follow VS Code's "Light Modern" theme so the components look as
+   they do in the editor. */
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #1f2328;
+  --vscode-descriptionForeground: #59636e;
+  --vscode-panel-border: #e5e7eb;
+  --vscode-sideBar-background: #f8f9fb;
+  --vscode-editorWidget-background: #f8f9fb;
+  --vscode-list-activeSelectionBackground: #e6efff;
+  --vscode-list-activeSelectionForeground: #1f2328;
+  --vscode-list-hoverBackground: #f2f4f7;
+  --vscode-editor-inactiveSelectionBackground: #e8eef8;
+  --vscode-editor-findMatchHighlightBackground: #fde68a;
+  --vscode-textCodeBlock-background: #f3f4f6;
+  --vscode-textLink-foreground: #1f4fd8;
+  --vscode-errorForeground: #d1242f;
+  --vscode-editorWarning-foreground: #bf8700;
+  --vscode-testing-iconPassed: #1a7f37;
+  --vscode-charts-green: #1a7f37;
+  --vscode-terminal-ansiGreen: #1a7f37;
+  --vscode-terminal-ansiYellow: #9a6700;
+  --vscode-terminal-ansiBlue: #0969da;
+  --vscode-terminal-ansiMagenta: #8250df;
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #1f2328;
+  --vscode-input-border: #d0d7de;
+  --vscode-focusBorder: #1f4fd8;
+  --vscode-button-background: #1f4fd8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #1a43b8;
+  --vscode-badge-background: #1f4fd8;
+  --vscode-badge-foreground: #ffffff;
+
+  --as-border: var(--vscode-panel-border);
+  --as-muted-text: var(--vscode-descriptionForeground);
+  --as-strong-text: var(--vscode-editor-foreground);
+  --as-accent-text: var(--vscode-textLink-foreground);
+  --as-selection-bg: var(--vscode-list-activeSelectionBackground);
+  --as-tooltip-bg: rgba(0, 0, 0, 0.8);
+  --as-tooltip-fg: #ffffff;
+  --as-panel-bg: rgba(255, 255, 255, 0.72);
+  --as-panel-bg-strong: rgba(255, 255, 255, 0.92);
+  --as-panel-card-bg: rgba(255, 255, 255, 0.78);
+  --as-panel-chip-bg: rgba(255, 255, 255, 0.82);
+  --as-panel-muted-bg: rgba(0, 0, 0, 0.04);
+  --as-panel-muted-bg-strong: rgba(0, 0, 0, 0.08);
+  --as-accent-soft-bg: rgba(31, 79, 216, 0.12);
+  --as-accent-soft-bg-strong: rgba(31, 79, 216, 0.18);
+  --as-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+  --as-reflection-border: var(--vscode-terminal-ansiMagenta);
+
+  --app-bg: #f5f6f8;
+  --app-sider: #0f172a;
+  --app-border: #e5e7eb;
+  --app-muted: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg);
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-editor-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Embedded upstream webview hosts take the space of a VS Code panel. */
+.upstream-host {
+  position: relative;
+  height: 100%;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.upstream-host > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.mono {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+.log-view {
+  margin: 0;
+  padding: 12px;
+  background: #0b1020;
+  color: #d1d5db;
+  border-radius: 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.chat-tool {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.chat-tool pre {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fill-height {
+  height: 100%;
+  min-height: 0;
+}
+
+.page {
+  padding: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.auth-page {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 20% 20%, #dbe6ff 0, transparent 40%), radial-gradient(circle at 80% 0%, #e9dcff 0, transparent 35%), var(--app-bg);
+  padding: 24px;
+}
+
+.bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+}
+
+.bar > div {
+  flex: 1;
+  background: #1f4fd8;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+}

@@ -1,0 +1,17 @@
+{
+  "name": "agentsociety-saas",
+  "private": true,
+  "description": "Hosted research platform built on AgentSociety (see NOTICE).",
+  "workspaces": [
+    "services/web"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w services/web",
+    "build:web": "npm run build -w services/web",
+    "typecheck:web": "npm run typecheck -w services/web",
+    "test:e2e": "npm run test:e2e -w services/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
