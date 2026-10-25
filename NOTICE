@@ -1,0 +1,28 @@
+This repository builds a hosted platform on top of AgentSociety.
+
+AgentSociety
+Copyright 2025-2026 FIB LAB, Tsinghua University
+https://github.com/tsinghua-fib-lab/agentsociety
+
+AI Social Scientist (VS Code / Cursor extension)
+Copyright 2026 FIB LAB, Tsinghua University
+
+The above components are licensed under the Apache License, Version 2.0. A filtered
+copy of their source is vendored under upstream/agentsociety/ together with the
+original LICENSE file; provenance and exclusions are recorded in upstream/UPSTREAM.md.
+Files we modify are changed only through upstream/patches/*.patch, and each patched
+file carries a notice describing the change (Apache-2.0, section 4(b)).
+
+Not included and not licensed to us for redistribution:
+  * packages/agentsociety/agentsociety/commercial  (upstream commercial license)
+  * extension/skills/{docx,pdf,pptx,xlsx}           (marked "license: Proprietary")
+
+If you publish research produced with this platform, please cite AgentSociety 2
+(arXiv:2607.11895) and, where relevant, AgentSociety v1 (arXiv:2502.08691); see
+upstream/agentsociety/CITATION.cff.
+
+"AgentSociety" is a name of the upstream project. This platform is an independent
+product and is not affiliated with or endorsed by FIB LAB or Tsinghua University.
+
+Third-party open-source components used by the platform services keep their own
+licenses; see the lockfiles under services/ for the full dependency list.

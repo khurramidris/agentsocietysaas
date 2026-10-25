@@ -1,0 +1,44 @@
+--- a/extension/skills/agentsociety-use-dataset/v1.0.0/scripts/use.py	2026-10-24 23:49:53.874168103 +0000
++++ b/extension/skills/agentsociety-use-dataset/v1.0.0/scripts/use.py	2026-10-24 23:50:06.628877934 +0000
+@@ -1,5 +1,8 @@
+ #!/usr/bin/env python3
+ """Dataset usage CLI — search, download, and inspect datasets from agentsociety2-web."""
++# Modified for the hosted platform (upstream/patches/0001-dataset-hub-endpoint-from-env.patch):
++# the dataset hub URL and an optional bearer token are read from the environment so a
++# sandbox can talk to the platform's own dataset hub instead of agentsociety2.fiblab.net.
+ 
+ import argparse
+ import json
+@@ -11,19 +14,29 @@
+ from urllib.error import HTTPError, URLError
+ from urllib.request import Request, urlopen
+ 
+-DEFAULT_SERVER_URL = "https://agentsociety2.fiblab.net"
++DEFAULT_SERVER_URL = os.environ.get(
++    "AGENTSOCIETY_DATASET_SERVER", "https://agentsociety2.fiblab.net"
++)
++_DATASET_TOKEN = os.environ.get("AGENTSOCIETY_DATASET_TOKEN", "").strip()
++
++
++def _auth_headers():
++    """Bearer header for the dataset hub; empty when no platform token is configured."""
++    return {"Authorization": f"Bearer {_DATASET_TOKEN}"} if _DATASET_TOKEN else {}
+ 
+ 
+ def _api_get(url, timeout=30):
+     """GET request returning parsed JSON."""
+-    req = Request(url, headers={"Accept": "application/json"})
++    req = Request(url, headers={"Accept": "application/json", **_auth_headers()})
+     with urlopen(req, timeout=timeout) as resp:
+         return json.loads(resp.read())
+ 
+ 
+ def _api_post(url, timeout=120):
+     """POST request returning parsed JSON."""
+-    req = Request(url, method="POST", headers={"Accept": "application/json"})
++    req = Request(
++        url, method="POST", headers={"Accept": "application/json", **_auth_headers()}
++    )
+     with urlopen(req, timeout=timeout) as resp:
+         return json.loads(resp.read())
+ 

@@ -1,0 +1,11 @@
+out/
+node_modules/
+.vscode-test/
+.claude/
+*.vsix
+__pycache__/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

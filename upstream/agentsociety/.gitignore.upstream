@@ -1,0 +1,215 @@
+# =========================================
+# Python
+# =========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# CI / pytest JUnit (GitLab unit test reports)
+packages/agentsociety2/junit.xml
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+/env/
+packages/agentsociety2/venv/
+venv_arm/
+
+# =========================================
+# IDE and Editors
+# =========================================
+.vscode/
+!.vscode/settings.json
+!extension/skills/**/manifest.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code local settings
+**/.claude/settings.local.json
+!.claude/settings.json
+
+# Claude Code user skills (custom)
+**/.claude/skills/
+
+# =========================================
+# Environment and Secrets
+# =========================================
+.env
+.env.*
+!.env.example
+.python-version
+easypaper_agentsociety.yaml
+
+# =========================================
+# Build and Package
+# =========================================
+wheelhouse/
+*.pb
+*.pb.*
+
+# =========================================
+# Logs and Databases
+# =========================================
+logs/
+log/
+*.log
+
+# =========================================
+# Documentation
+# =========================================
+docs/_build/
+packages/agentsociety/docs/_build/
+packages/agentsociety2/docs/_build/
+docs_v1/_build/
+*.mo
+
+# =========================================
+# Jupyter Notebooks
+# =========================================
+*.ipynb
+*.ipynb_checkpoints/
+.ipynb_checkpoints/
+
+# =========================================
+# OS Generated
+# =========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =========================================
+# Cache
+# =========================================
+cache/
+*.pkl
+*.pickle
+
+# =========================================
+# Test Output
+# =========================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# =========================================
+# Project Specific
+# =========================================
+
+# Data directories
+agentsociety_data/
+.agentsociety/
+!.agentsociety/progress.json
+!.agentsociety/decisions.jsonl
+.agentsociety-benchmark/
+mobibench/
+benchmark_results/
+
+# Demos and experiments
+scientist_demo/
+groundtruth/
+workspace/
+packages/agentsociety2/.chainlit/
+paper/
+packages/agentsociety2/agentsociety2/skills/paper/**/__pycache__/
+
+# User projects and experiments
+Project/
+hypothesis_*/
+papers/
+presentation/
+synthesis/
+user_data/
+datasets/
+/custom/
+
+# Game results
+result_*/
+game_log/
+
+# Legacy packages (downloaded, not source)
+agentsociety-sim
+agentsociety-ui
+
+# Temporary files
+*.template
+ignore/
+TODO
+NEXT_STEPS.md
+PUBLISH_CHECKLIST.md
+
+# Test data files (local / generated)
+profiles.json
+*.json
+!extension/package-lock.json
+!extension/package.nls.json
+!extension/package.nls.*.json
+!extension/skills/*/manifest.json
+!frontend/package-lock.json
+*.jsonl
+
+# Custom
+paper_sources/
+.playwright-mcp/
+
+# Sphinx generated .pot templates
+packages/agentsociety2/docs/locale/gettext/
+
+# Temporary examples
+examples/
+
+# Local example run directories under the AS2 package
+packages/agentsociety2/run_*/
+
+# =========================================
+# Pattern Exceptions
+# =========================================
+
+# Allow specific test files
+!packages/agentsociety2/tests/
+!packages/agentsociety2/tests/**
+!packages/agentsociety2/agentsociety2/contrib/env/*_test.py
+!examples/v2/daily_mobility/data/
+!examples/v2/daily_mobility/data/groundtruth/
+!examples/v2/daily_mobility/data/groundtruth/**
+!examples/v2/daily_mobility/data/groundtruth/*.json
+
+# Allow specific text files
+!requirements.txt
+!**/requirements*.txt
+!CHANGELOG.md
+
+# Allow __init__.py
+!__init__.py
+
+# Allow JSON configs (but not generated JSON data)
+# Note: *.json and *.jsonl are ignored by default for generated data
+!packages/agentsociety2/agentsociety2/agent/skills/**/references/*.json

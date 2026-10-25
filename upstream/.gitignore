@@ -1,0 +1,9 @@
+# The vendored snapshot is tracked in full; only build artefacts are ignored here.
+# Rules in this file override the generic ones in the repository root .gitignore.
+!.vscode/
+!.env.example
+!dist/
+**/__pycache__/
+**/*.py[cod]
+**/node_modules/
+**/*.egg-info/
