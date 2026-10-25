@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     # Built web app (services/web/dist) served at "/"; empty disables.
     web_dist_dir: str = ""
+    # Public (pk.*) Mapbox token for the replay map; maps fall back to a placeholder without it.
+    mapbox_token: str = ""
 
     # ---- storage ---------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./.data/controlplane.db"

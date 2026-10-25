@@ -34,6 +34,7 @@ async def meta(request: Request):
             "sandbox_driver": settings.sandbox_driver,
         },
         "ide_base_url": settings.effective_ide_base_url,
+        "mapbox_token": settings.mapbox_token,
         "defaults": {
             "sim_model": settings.default_sim_model,
             "chat_model": settings.default_chat_model,

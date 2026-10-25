@@ -177,3 +177,26 @@ def test_mcp_endpoint_with_the_upstream_client(live_cp, monkeypatch):
         headers={"authorization": f"Bearer {key}", "accept": "application/json, text/event-stream"},
     )
     assert r.status_code != 307
+
+
+async def test_rest_search_and_library(cp):
+    alice = await cp.signup("alice@example.com")
+    viewer = await cp.signup("viewer@example.com")
+    stranger = await cp.signup("stranger@example.com")
+    await cp.add_member(alice, viewer, "viewer")
+    base = f"/api/v1/orgs/{alice.org_id}/literature"
+    r = await cp.client.post(
+        f"{base}/library", json={"text": "Echo chambers emerge in simulated feeds.", "title": "Feed simulation notes", "year": 2026}, headers=alice.h
+    )
+    assert r.status_code == 200
+    doc_id = r.json()["id"]
+    assert (await cp.client.post(f"{base}/library", json={"text": "x"}, headers=viewer.h)).status_code == 403
+    found = (await cp.client.post(f"{base}/search", json={"query": "echo chambers"}, headers=viewer.h)).json()
+    assert [r["title"] for r in found["results"]] == ["Feed simulation notes"]
+    assert (await cp.client.post(f"{base}/search", json={"query": "x", "sources": ["google"]}, headers=alice.h)).status_code == 400
+    assert (await cp.client.get(f"{base}/library", headers=stranger.h)).status_code == 404
+    listed = (await cp.client.get(f"{base}/library", headers=viewer.h)).json()["documents"]
+    assert listed[0]["characters"] == len("Echo chambers emerge in simulated feeds.") and "text" not in listed[0]
+    assert (await cp.client.get(f"{base}/library/{doc_id}", headers=alice.h)).json()["text"].startswith("Echo")
+    assert (await cp.client.delete(f"{base}/library/{doc_id}", headers=alice.h)).status_code == 200
+    assert (await cp.client.get(f"{base}/library", headers=alice.h)).json()["documents"] == []

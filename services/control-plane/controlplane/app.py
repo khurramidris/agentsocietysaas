@@ -14,7 +14,7 @@ from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import __version__, migrate
-from .api import admin, auth, billing, catalog, datasets, orgs, projects, proxy
+from .api import admin, auth, billing, catalog, datasets, literature, orgs, projects, proxy
 from .context import AppContext
 from .gateway import router as gateway_router
 from .gateway.catalog import seed_catalog
@@ -93,7 +93,7 @@ def create_app(settings: Settings | None = None, *, sandbox_driver=None) -> Fast
             allow_headers=["*"],
         )
 
-    for module in (auth, orgs, projects, proxy, billing, admin, datasets):
+    for module in (auth, orgs, projects, proxy, billing, admin, datasets, literature):
         app.include_router(module.router)
     app.include_router(admin.meta_router)
     app.include_router(catalog.router)
