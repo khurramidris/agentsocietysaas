@@ -33,6 +33,7 @@ from ..workspace_env import child_env
 router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[AgentAuth])
 
 PERMISSION_MODES = ("bypassPermissions", "acceptEdits", "default", "plan")
+INHERITED_CLAUDE_PREFIXES = ("CLAUDE", "ANTHROPIC_", "CCR_")
 
 PLATFORM_PROMPT = (
     "You are the AI Social Scientist assistant of a hosted AgentSociety research workspace. "
@@ -148,7 +149,9 @@ class ChatManager:
 
     def claude_env(self, model: str) -> dict[str, str]:
         s = self.settings
-        env = child_env(s)
+        # Never inherit another Claude Code installation's configuration (auth mode,
+        # session ids, host-managed providers): only the variables set below apply.
+        env = {k: v for k, v in child_env(s).items() if not k.startswith(INHERITED_CLAUDE_PREFIXES)}
         env.update(
             {
                 "ANTHROPIC_BASE_URL": s.anthropic_base_url,
