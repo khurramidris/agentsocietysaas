@@ -1,0 +1,12 @@
+
+---
+
+## Hosted Platform Notes
+
+This workspace runs in a managed cloud sandbox rather than on a local machine.
+
+- `.env` is maintained by the platform. Its managed block points every LLM role, literature search and the dataset hub at platform endpoints with a project-scoped token. Do not copy that token anywhere else. Users change models and add their own variables from the project settings page.
+- The Python interpreter in `PYTHON_PATH` already has `agentsociety2` and the analysis extras installed; do not create virtual environments or reinstall it.
+- The bundled Office document skills (`pdf`, `docx`, `xlsx`, `pptx`) are not part of this workspace. When a task needs them, use the installed Python libraries directly (`pypdf`, `pdfplumber`, `python-docx`, `openpyxl`, `python-pptx`) together with `pandoc` and LaTeX, which are available on the command line.
+- Users can also start, stop and inspect experiment runs from the platform's web interface. Both paths use the same `hypothesis_{id}/experiment_{id}/run/` directories and `pid.json`, so check `run-experiment status` before starting a run.
+- Long simulations consume the organisation's credits. Before launching a large run, state the agent count, step budget and expected LLM call volume, and confirm with the user.

@@ -1,0 +1,157 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code when working in this AI Social Scientist workspace.
+
+**Research Context**: See `TOPIC.md` for research topics, goals, and current work.
+
+---
+
+## Session Start
+
+At the start of a new task or when resuming work:
+
+1. Read `TOPIC.md` to understand the research goal.
+2. Read `.env` and resolve `PYTHON_PATH`.
+3. Run:
+
+```bash
+PYTHON_PATH=$(grep "^PYTHON_PATH=" .env | cut -d'=' -f2)
+PYTHON_PATH=${PYTHON_PATH:-python3}
+$PYTHON_PATH .agentsociety/bin/ags.py research-pipeline where-am-i --json
+```
+
+Treat the returned pipeline state as the default source of truth for what to do next.
+
+---
+
+## Python Environment
+
+All Claude Code skills in this workspace require `agentsociety2` to be available in the configured Python environment.
+
+Always prefer the interpreter from `.env`:
+
+```bash
+PYTHON_PATH=$(grep "^PYTHON_PATH=" .env | cut -d'=' -f2)
+PYTHON_PATH=${PYTHON_PATH:-python3}
+```
+
+Required environment variables:
+
+- `AGENTSOCIETY_LLM_API_KEY`
+- `AGENTSOCIETY_LLM_API_BASE`
+- `AGENTSOCIETY_LLM_MODEL`
+
+Optional: `AGENTSOCIETY_LLM_THINKING` (`on`/`off`) toggles reasoning for OpenAI-compatible
+endpoints; leave it unset to send no reasoning parameters at all. `AGENTSOCIETY_CODER_LLM_*`
+overrides the coder role. See the extension config page for details.
+
+Why this matters:
+
+- Dependencies are managed via `uv`, not system Python.
+- Skill scripts use the calling interpreter.
+- Using the wrong interpreter usually means `agentsociety2` is not importable.
+
+---
+
+## Primary State Files
+
+The workspace keeps durable execution state under `.agentsociety/`. Claude Code should use these files as working memory for the research process.
+
+| File | Role | How to use it |
+|------|------|---------------|
+| `.agentsociety/progress.json` | Pipeline stage tracker | Read first when deciding the next research step |
+| `.agentsociety/bin/ags.py` | Stable workspace launcher | Prefer this entry point for bundled workflow operations |
+
+Prefer updating pipeline state through `.agentsociety/bin/ags.py research-pipeline ...` instead of editing state files manually.
+
+---
+
+## Workspace Map
+
+```
+.
+├── TOPIC.md
+├── CLAUDE.md
+├── AGENTS.md
+├── .env
+├── .claude/
+│   ├── settings.json           # Project-level Claude Code settings
+│   └── skills/                 # Claude Code skill bundle for this workspace
+├── .agentsociety/
+│   ├── progress.json
+│   └── bin/ags.py
+├── papers/                     # Literature outputs
+├── datasets/                   # Downloaded datasets
+├── user_data/                  # User-provided data files
+├── custom/
+│   ├── agents/                 # Custom agent code
+│   ├── envs/                   # Custom environment module code
+│   └── README.md
+├── hypothesis_{id}/            # Hypothesis and experiment folders
+├── presentation/               # Analysis reports and assets
+├── synthesis/                  # Cross-hypothesis synthesis outputs
+└── paper/                      # Workspace-level paper outputs
+```
+
+Most tasks should begin with `TOPIC.md`, `.agentsociety/progress.json`, and the relevant hypothesis or report directory.
+
+---
+
+## Skill Routing
+
+Claude Code loads the workspace-local skill bundle from `.claude/skills/`.
+
+Use this routing model:
+
+- Start with `agentsociety-research-pipeline` when the current stage is unclear.
+- Use `agentsociety-literature-search` for academic literature collection.
+- Use `agentsociety-scan-modules` before hypothesis creation or experiment configuration.
+- Before `experiment-config`, `create-agent`, or `create-env-module`, resolve the simulation scale budget: target agent count or range, step budget, runtime budget, and preferred complexity tier. If the budget is missing, ask for it first and compare 2-3 approaches with trade-offs before choosing one.
+- If the work may depend on external data, search datasets first with `agentsociety-use-dataset`; if a local file should be shared or reused, guide the user through `agentsociety-create-dataset` upload instead of hand-copying data into config.
+- Use `agentsociety-hypothesis` to create or revise hypotheses.
+- Use `agentsociety-experiment-config` to prepare `init_config.json` and `steps.yaml`.
+- Use `agentsociety-run-experiment` only after configuration is ready and checked.
+- Use `agentsociety-analysis` once experiment outputs exist.
+- Use the external `paper-toolkit` plugin after analysis artifacts and reviewed claims are ready.
+- Use `agentsociety-paper-review` after a complete draft exists when the user requests an internal venue-calibrated review, score, or advice about which research stage to revisit. For PDF input, use the bundled `pdf` skill plus the paper-review PDF intake once, then give all agents the same frozen text, layout, and page renders; stop if the intake quality gate fails. For a normal result, launch three isolated reviewer subagents concurrently with the same frozen inputs, then launch a separate MetaReview subagent to verify evidence, report score dispersion, and consolidate reroute advice. It writes only the review bundle and must not revise research artifacts, run experiments, or update pipeline state.
+- After review, the user or controlling coding agent may accept one stage-valued reroute. Apply it with `research-pipeline reroute STAGE --reason "..." --source-artifact PATH`; never treat `human_decision` or `none` as stages. A reroute marks the target and completed downstream stages `needs_revision` and preserves an auditable revision round.
+- Use `agentsociety-use-dataset` or `agentsociety-create-dataset` only when data acquisition or publishing is part of the task.
+
+Preferred command examples:
+
+```bash
+$PYTHON_PATH .agentsociety/bin/ags.py research-pipeline where-am-i --json
+$PYTHON_PATH .agentsociety/bin/ags.py research-pipeline reroute analysis --reason "MetaReview requires uncertainty estimates" --source-artifact paper/reviews/acl-arr-review-r1.md
+$PYTHON_PATH .agentsociety/bin/ags.py scan-modules list --short
+$PYTHON_PATH .agentsociety/bin/ags.py hypothesis list --json
+$PYTHON_PATH .agentsociety/bin/ags.py experiment-config validate --hypothesis-id 1 --experiment-id 1
+$PYTHON_PATH .agentsociety/bin/ags.py run-experiment status --hypothesis-id 1 --experiment-id 1
+$PYTHON_PATH .agentsociety/bin/ags.py analysis load-context --workspace . --hypothesis-id 1 --experiment-id 1
+```
+
+---
+
+## Operating Rules
+
+Do:
+
+- Match the user's language.
+- Explain the current pipeline stage when it matters to the next action.
+- Prefer `.agentsociety/bin/ags.py` over ad hoc helper scripts for workflow operations.
+- Update pipeline state after completing a stage or resolving a meaningful blocker.
+- When an accepted review requires backward movement, use `research-pipeline reroute` and carry its reason and source artifact into the owning skill.
+- Read relevant state files before asking the user for information that may already exist in the workspace.
+- Resolve the simulation scale budget before configuration or custom module creation; if it is missing, ask clarifying questions and compare 2-3 approaches with trade-offs.
+- If external data is needed, search or inspect datasets before building new assumptions; guide dataset upload when the input should be shared or reused.
+- **Commit every meaningful change**: after creating, editing, or deleting files, always run `git add -A && git commit -m "<descriptive message>"` to keep a full audit trail. This includes config files, experiment outputs, analysis results, and any workspace state changes.
+
+Do not:
+
+- Guess the current stage when `research-pipeline where-am-i --json` can tell you.
+- Use system Python by default when `.env` provides `PYTHON_PATH`.
+- Edit `.agentsociety/*.json` or `.jsonl` manually unless there is a clear reason not to use the CLI.
+- Move `current_stage` backward by editing JSON or by marking an earlier stage `in_progress`; use `research-pipeline reroute` so downstream work is invalidated consistently.
+- Let reviewer or analysis subagents mutate pipeline state; the controlling agent is the single writer of `progress.json`.
+- Start analysis before experiment outputs exist.
+- Start paper generation before analysis outputs and claim review are in place.
+- Skip git commits after making file changes — every modification must be tracked.
