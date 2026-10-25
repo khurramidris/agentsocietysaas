@@ -76,7 +76,7 @@ class Settings:
     extra_child_env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         secret = _env("SANDBOX_AGENT_SECRET")
         if not secret:
             raise RuntimeError("SANDBOX_AGENT_SECRET must be set")

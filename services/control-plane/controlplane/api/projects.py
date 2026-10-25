@@ -68,8 +68,8 @@ class CreateProject(BaseModel):
 async def list_projects(org_id: str, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
     await org_access(db, principal, org_id)
     rows = (
-        await db.execute(select(Project).where(Project.org_id == org_id, Project.archived_at.is_(None)).order_by(Project.updated_at.desc()))
-    ).scalars().all()
+        (await db.execute(select(Project).where(Project.org_id == org_id, Project.archived_at.is_(None)).order_by(Project.updated_at.desc()))).scalars().all()
+    )
     return {"projects": [project_out(p) for p in rows]}
 
 
@@ -129,7 +129,9 @@ class UpdateProject(BaseModel):
 
 
 @router.patch("/api/v1/projects/{project_id}")
-async def update_project(project_id: str, body: UpdateProject, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
+async def update_project(
+    project_id: str, body: UpdateProject, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)
+):
     pa = await project_access(db, principal, project_id, "member")
     p = pa.project
     if body.name is not None:

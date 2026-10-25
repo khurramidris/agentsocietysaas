@@ -3,14 +3,19 @@
 Uploads and downloads go straight between the client and the store via signed
 URLs (S3 presigned URLs, or HMAC-signed URLs to this service for the local
 backend), matching the multipart flow the upstream dataset skills implement.
+The backend's multipart upload id is returned by :meth:`BlobStore.begin_upload`
+and stored with the upload record, so any control-plane replica can finish it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import shutil
+import tempfile
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -24,19 +29,25 @@ class BlobStore:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    # parts are staged under "<key>.parts/<n>" then combined
-    async def part_upload_url(self, key: str, part_number: int) -> str:
+    async def begin_upload(self, key: str) -> str | None:
+        """Start a multipart upload; returns the backend's upload id (if it has one)."""
+        return None
+
+    async def part_upload_url(self, key: str, part_number: int, upload_id: str | None) -> str:
         raise NotImplementedError
 
-    async def complete_parts(self, key: str, parts: int) -> int:
+    async def complete_parts(self, key: str, parts: int, upload_id: str | None) -> int:
+        """Assemble the parts into the object at ``key``; returns its size in bytes."""
         raise NotImplementedError
 
     async def download_url(self, key: str, filename: str) -> str:
         raise NotImplementedError
 
-    async def open_local(self, key: str) -> Path:
-        """Path to a local copy (downloaded for S3) - used for validation."""
+    @contextlib.asynccontextmanager
+    async def local_copy(self, key: str) -> AsyncIterator[Path]:
+        """A local file with the object's content, valid inside the ``async with``."""
         raise NotImplementedError
+        yield  # pragma: no cover
 
     async def delete(self, key: str) -> None:
         raise NotImplementedError
@@ -59,19 +70,19 @@ class LocalBlobStore(BlobStore):
         query = {"exp": str(exp), "sig": sign(self.settings, purpose, payload, exp), **(extra or {})}
         return f"{self.settings.public_base_url}{path}?{urlencode(query)}"
 
-    async def part_upload_url(self, key: str, part_number: int) -> str:
+    async def part_upload_url(self, key: str, part_number: int, upload_id: str | None) -> str:
         payload = f"{key}#{part_number}"
         return self._signed(f"/api/v1/blobs/upload/{quote(key)}", "blob-put", payload, {"part": str(part_number)})
 
     def verify_part(self, key: str, part_number: int, exp: int, sig: str) -> bool:
         return verify_signature(self.settings, "blob-put", f"{key}#{part_number}", exp, sig)
 
-    def write_part(self, key: str, part_number: int, data: bytes) -> None:
+    def part_path(self, key: str, part_number: int) -> Path:
         parts_dir = self.path(key + ".parts")
         parts_dir.mkdir(parents=True, exist_ok=True)
-        (parts_dir / f"{part_number:06d}").write_bytes(data)
+        return parts_dir / f"{part_number:06d}"
 
-    async def complete_parts(self, key: str, parts: int) -> int:
+    async def complete_parts(self, key: str, parts: int, upload_id: str | None) -> int:
         def _combine() -> int:
             parts_dir = self.path(key + ".parts")
             target = self.path(key)
@@ -94,16 +105,14 @@ class LocalBlobStore(BlobStore):
     def verify_download(self, key: str, exp: int, sig: str) -> bool:
         return verify_signature(self.settings, "blob-get", key, exp, sig)
 
-    async def open_local(self, key: str) -> Path:
-        return self.path(key)
+    @contextlib.asynccontextmanager
+    async def local_copy(self, key: str) -> AsyncIterator[Path]:
+        yield self.path(key)
 
     async def delete(self, key: str) -> None:
-        with_parts = self.path(key + ".parts")
-        shutil.rmtree(with_parts, ignore_errors=True)
-        try:
+        shutil.rmtree(self.path(key + ".parts"), ignore_errors=True)
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(self.path(key))
-        except FileNotFoundError:
-            pass
 
 
 class S3BlobStore(BlobStore):
@@ -114,21 +123,15 @@ class S3BlobStore(BlobStore):
         self.bucket = settings.s3_bucket
         self.prefix = settings.s3_prefix
         self.s3 = boto3.client("s3", endpoint_url=settings.s3_endpoint_url or None, region_name=settings.s3_region or None)
-        self._uploads: dict[str, str] = {}
-        self.cache = (Path(settings.data_dir) / "blob-cache").resolve()
-        self.cache.mkdir(parents=True, exist_ok=True)
 
     def _key(self, key: str) -> str:
         return self.prefix + key
 
-    async def _upload_id(self, key: str) -> str:
-        if key not in self._uploads:
-            resp = await asyncio.to_thread(self.s3.create_multipart_upload, Bucket=self.bucket, Key=self._key(key))
-            self._uploads[key] = resp["UploadId"]
-        return self._uploads[key]
+    async def begin_upload(self, key: str) -> str | None:
+        resp = await asyncio.to_thread(self.s3.create_multipart_upload, Bucket=self.bucket, Key=self._key(key))
+        return resp["UploadId"]
 
-    async def part_upload_url(self, key: str, part_number: int) -> str:
-        upload_id = await self._upload_id(key)
+    async def part_upload_url(self, key: str, part_number: int, upload_id: str | None) -> str:
         return await asyncio.to_thread(
             self.s3.generate_presigned_url,
             "upload_part",
@@ -136,17 +139,18 @@ class S3BlobStore(BlobStore):
             ExpiresIn=URL_TTL_S,
         )
 
-    async def complete_parts(self, key: str, parts: int) -> int:
-        upload_id = await self._upload_id(key)
+    async def complete_parts(self, key: str, parts: int, upload_id: str | None) -> int:
         listed = await asyncio.to_thread(self.s3.list_parts, Bucket=self.bucket, Key=self._key(key), UploadId=upload_id)
         etags = [{"PartNumber": p["PartNumber"], "ETag": p["ETag"]} for p in listed.get("Parts", [])]
         if len(etags) != parts:
             raise FileNotFoundError(f"expected {parts} parts, found {len(etags)}")
         await asyncio.to_thread(
             self.s3.complete_multipart_upload,
-            Bucket=self.bucket, Key=self._key(key), UploadId=upload_id, MultipartUpload={"Parts": etags},
+            Bucket=self.bucket,
+            Key=self._key(key),
+            UploadId=upload_id,
+            MultipartUpload={"Parts": etags},
         )
-        self._uploads.pop(key, None)
         head = await asyncio.to_thread(self.s3.head_object, Bucket=self.bucket, Key=self._key(key))
         return int(head["ContentLength"])
 
@@ -158,10 +162,18 @@ class S3BlobStore(BlobStore):
             ExpiresIn=URL_TTL_S,
         )
 
-    async def open_local(self, key: str) -> Path:
-        target = self.cache / key.replace("/", "_")
-        await asyncio.to_thread(self.s3.download_file, self.bucket, self._key(key), str(target))
-        return target
+    @contextlib.asynccontextmanager
+    async def local_copy(self, key: str) -> AsyncIterator[Path]:
+        cache = Path(self.settings.data_dir) / "blob-cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(dir=cache, suffix=".zip")
+        os.close(fd)
+        try:
+            await asyncio.to_thread(self.s3.download_file, self.bucket, self._key(key), name)
+            yield Path(name)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(name)
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self.s3.delete_object, Bucket=self.bucket, Key=self._key(key))

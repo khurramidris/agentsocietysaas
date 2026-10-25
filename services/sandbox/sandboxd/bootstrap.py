@@ -208,8 +208,7 @@ def _init_custom_modules(settings: Settings, result: BootstrapResult) -> None:
     if (settings.workspace / "custom").exists():
         return
     proc = subprocess.run(
-        [settings.python, "-m", "agentsociety2.society.workspace", "init-custom",
-         "--target-dir", str(settings.workspace), "--json"],
+        [settings.python, "-m", "agentsociety2.society.workspace", "init-custom", "--target-dir", str(settings.workspace), "--json"],
         cwd=settings.workspace,
         env=_python_env(settings),
         capture_output=True,
@@ -227,10 +226,7 @@ def _init_custom_modules(settings: Settings, result: BootstrapResult) -> None:
     for sub in ("agents", "envs", "skills"):
         (settings.workspace / "custom" / sub).mkdir(parents=True, exist_ok=True)
     result.created.append("custom/ (fallback)")
-    result.warnings.append(
-        "agentsociety2 init-custom failed; created empty custom/ directories: "
-        + (proc.stderr.strip()[-500:] or "no output")
-    )
+    result.warnings.append("agentsociety2 init-custom failed; created empty custom/ directories: " + (proc.stderr.strip()[-500:] or "no output"))
 
 
 _MODULE_INFO_SCRIPT = """
@@ -276,9 +272,7 @@ def _write_state_files(settings: Settings, topic: str, result: BootstrapResult) 
         result,
         ".agentsociety/prefill_params.json",
     )
-    _write_json_if_missing(
-        agentsociety / "progress.json", _initial_progress(topic), result, ".agentsociety/progress.json"
-    )
+    _write_json_if_missing(agentsociety / "progress.json", _initial_progress(topic), result, ".agentsociety/progress.json")
 
 
 def _write_claude_md(settings: Settings, result: BootstrapResult) -> None:

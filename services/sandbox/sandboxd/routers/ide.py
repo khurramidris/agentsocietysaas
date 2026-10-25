@@ -33,7 +33,7 @@ def _ide(request_app):
     return request_app.state.ide
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
 async def ide_http(request: Request, path: str):
     require_agent_secret(request)
     _ide(request.app)

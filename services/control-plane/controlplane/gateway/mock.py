@@ -28,10 +28,7 @@ from typing import Any
 TERMINAL_TOOL_NAMES = ("finish", "final_answer", "answer", "done", "submit", "respond", "complete")
 MOCK_BASH = re.compile(r"\[mock:bash\]\s*(.+)", re.IGNORECASE)
 
-CODEGEN_REPLY = (
-    'print("The environment processed the request successfully (mock model).")\n'
-    'results["status"] = "success"'
-)
+CODEGEN_REPLY = 'print("The environment processed the request successfully (mock model).")\nresults["status"] = "success"'
 
 
 def estimate_tokens(text: str) -> int:
@@ -152,9 +149,7 @@ def openai_chat(body: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
     terminal = _pick_terminal_tool(list(by_name))
     if terminal:
         args = synthesize(by_name[terminal].get("parameters") or {"type": "object", "properties": {}})
-        message["tool_calls"] = [
-            {"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function", "function": {"name": terminal, "arguments": json.dumps(args)}}
-        ]
+        message["tool_calls"] = [{"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function", "function": {"name": terminal, "arguments": json.dumps(args)}}]
         finish_reason = "tool_calls"
         out_text = json.dumps(args)
     else:
@@ -235,7 +230,12 @@ def anthropic_message(body: dict[str, Any]) -> dict[str, Any]:
         command = match.group(1).strip().splitlines()[0]
         content = [
             {"type": "text", "text": "Running the requested command."},
-            {"type": "tool_use", "id": f"toolu_mock_{uuid.uuid4().hex[:12]}", "name": "Bash", "input": {"command": command, "description": "Run requested command"}},
+            {
+                "type": "tool_use",
+                "id": f"toolu_mock_{uuid.uuid4().hex[:12]}",
+                "name": "Bash",
+                "input": {"command": command, "description": "Run requested command"},
+            },
         ]
         stop_reason = "tool_use"
     else:

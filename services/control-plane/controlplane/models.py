@@ -249,6 +249,8 @@ class DatasetUpload(Base):
     part_size: Mapped[int]
     total_size: Mapped[int]
     parts: Mapped[int]
+    # Multipart upload id of the blob backend (S3), so any replica can complete it.
+    backend_upload_id: Mapped[str | None] = mapped_column(String(1024), default=None)
     status: Mapped[str] = mapped_column(String(16), default="open")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 

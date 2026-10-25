@@ -29,7 +29,7 @@ from sqlalchemy import select
 
 from ..billing import plan_for
 from ..models import ModelRoute, Organization, Provider
-from . import mock
+from . import egress, mock
 from .auth import Caller, CallerResolver, GatewayError, ModelResolver, ResolvedModel
 from .metering import ConcurrencyLimiter, Usage, cost_micros
 
@@ -41,6 +41,8 @@ router = APIRouter(tags=["llm-gateway"])
 
 DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
 PLAN_TTL_S = 30.0
+# How long a request may wait for one of its organization's concurrency slots.
+QUEUE_TIMEOUT_S = 300.0
 
 
 def openai_error(err: GatewayError) -> JSONResponse:
@@ -83,12 +85,12 @@ class Gateway:
     async def preflight(self, request: Request, alias: str | None, kind: str) -> tuple[Caller, ResolvedModel, asyncio.Semaphore]:
         caller = await self.callers.resolve(request)
         resolved = await self.models.resolve(caller.org_id, alias or "", kind)
-        if resolved.billable and (resolved.route.input_nanos or resolved.route.output_nanos):  # type: ignore[union-attr]
-            if await self.ctx.usage.available_micros(caller.org_id) <= 0:
-                raise GatewayError(402, "insufficient_credits", "Your organization is out of credits. Add credits to continue.")
+        priced = resolved.billable and bool(resolved.route.input_nanos or resolved.route.output_nanos)  # type: ignore[union-attr]
+        if priced and await self.ctx.usage.available_micros(caller.org_id) <= 0:
+            raise GatewayError(402, "insufficient_credits", "Your organization is out of credits. Add credits to continue.")
         sem = self.limiter.get(caller.org_id, await self._concurrency_limit(caller.org_id))
         try:
-            await asyncio.wait_for(sem.acquire(), timeout=300)
+            await asyncio.wait_for(sem.acquire(), timeout=QUEUE_TIMEOUT_S)
         except TimeoutError:
             raise GatewayError(429, "rate_limit_error", "Too many concurrent model requests for this organization") from None
         return caller, resolved, sem
@@ -117,6 +119,20 @@ class Gateway:
 
     def provider_key(self, provider: Provider) -> str:
         return self.ctx.encryptor.decrypt(provider.api_key_enc)
+
+    async def send(
+        self, provider: Provider, method: str, url: str, *, json: Any = None, headers: dict[str, str] | None = None, stream: bool = False
+    ) -> httpx.Response:
+        """Send a provider request; organisation-owned providers go to a vetted, pinned address."""
+        headers = dict(headers or {})
+        extensions: dict[str, Any] = {}
+        if provider.org_id is not None:
+            target = await egress.pin(url, allow_private=self.ctx.settings.allow_private_provider_urls)
+            url = target.url
+            headers.update(target.headers)
+            extensions = target.extensions
+        request = self.http.build_request(method, url, json=json, headers=headers, extensions=extensions)
+        return await self.http.send(request, stream=stream)
 
 
 def _gw(request: Request) -> Gateway:
@@ -175,7 +191,7 @@ async def _metered_stream(
 
 
 def _openai_headers(gw: Gateway, provider: Provider) -> dict[str, str]:
-    headers = {"Content-Type": "application/json", **{k: str(v) for k, v in (provider.extra_headers or {}).items()}}
+    headers = {"Content-Type": "application/json", **egress.clean_extra_headers(provider.extra_headers)}
     key = gw.provider_key(provider)
     if key:
         headers["Authorization"] = f"Bearer {key}"
@@ -194,6 +210,9 @@ async def _litellm_call(gw: Gateway, resolved: ResolvedModel, body: dict[str, An
     kwargs = {k: v for k, v in body.items() if k not in ("model", "stream_options")}
     extra: dict[str, Any] = {}
     if provider.api_base:
+        if provider.org_id is not None:
+            # litellm opens its own connections, so the address cannot be pinned; vet it.
+            await egress.pin(provider.api_base, allow_private=gw.ctx.settings.allow_private_provider_urls)
         extra["api_base"] = provider.api_base
     key = gw.provider_key(provider)
     if key:
@@ -234,9 +253,8 @@ async def chat_completions(request: Request):
             if stream:
                 upstream_body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
             url = resolved.provider.api_base.rstrip("/") + "/chat/completions"
-            req = gw.http.build_request("POST", url, json=upstream_body, headers=_openai_headers(gw, resolved.provider))
             try:
-                resp = await gw.http.send(req, stream=stream)
+                resp = await gw.send(resolved.provider, "POST", url, json=upstream_body, headers=_openai_headers(gw, resolved.provider), stream=stream)
             except httpx.HTTPError as exc:
                 gw.record(caller, resolved, alias, "llm", usage, 502, started, request_id)
                 return openai_error(GatewayError(502, "upstream_error", f"Provider unreachable: {exc}"))
@@ -333,11 +351,17 @@ async def embeddings(request: Request):
         if kind == "openai":
             url = resolved.provider.api_base.rstrip("/") + "/embeddings"
             try:
-                resp = await gw.http.post(url, json={**body, "model": resolved.upstream_model}, headers=_openai_headers(gw, resolved.provider))
+                resp = await gw.send(
+                    resolved.provider, "POST", url, json={**body, "model": resolved.upstream_model}, headers=_openai_headers(gw, resolved.provider)
+                )
             except httpx.HTTPError as exc:
                 return openai_error(GatewayError(502, "upstream_error", f"Provider unreachable: {exc}"))
-            data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-            usage = Usage(input_tokens=int(((data or {}).get("usage") or {}).get("prompt_tokens") or 0))
+            try:
+                data = resp.json()
+            except ValueError:
+                gw.record(caller, resolved, alias, "embedding", Usage(), 502, started, request_id)
+                return openai_error(GatewayError(502, "upstream_error", f"Provider returned a non-JSON response ({resp.status_code})"))
+            usage = Usage(input_tokens=int(((data if isinstance(data, dict) else {}).get("usage") or {}).get("prompt_tokens") or 0))
             if isinstance(data, dict) and "model" in data:
                 data["model"] = alias
             gw.record(caller, resolved, alias, "embedding", usage, resp.status_code, started, request_id)
@@ -349,6 +373,11 @@ async def embeddings(request: Request):
         return JSONResponse(data)
     except GatewayError as err:
         return openai_error(err)
+    except Exception as exc:  # provider SDK errors from translation
+        log.exception("gateway embedding error")
+        gw.record(caller, resolved, alias, "embedding", Usage(), 502, started, request_id)
+        status = getattr(exc, "status_code", 502) or 502
+        return openai_error(GatewayError(int(status), "upstream_error", str(exc)[:500]))
     finally:
         sem.release()
 
@@ -356,13 +385,17 @@ async def embeddings(request: Request):
 async def _visible_models(request: Request, gw: Gateway, caller: Caller) -> list[dict]:
     async with gw.ctx.db.sessionmaker() as db:
         rows = (
-            await db.execute(
-                select(ModelRoute).where(
-                    ModelRoute.enabled.is_(True),
-                    (ModelRoute.org_id == caller.org_id) | ModelRoute.org_id.is_(None),
+            (
+                await db.execute(
+                    select(ModelRoute).where(
+                        ModelRoute.enabled.is_(True),
+                        (ModelRoute.org_id == caller.org_id) | ModelRoute.org_id.is_(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return [{"id": r.alias, "object": "model", "owned_by": "organization" if r.org_id else "platform", "kind": r.kind} for r in rows]
 
 
@@ -383,7 +416,7 @@ def _anthropic_headers(gw: Gateway, request: Request, provider: Provider) -> dic
     headers = {
         "content-type": "application/json",
         "anthropic-version": request.headers.get("anthropic-version", DEFAULT_ANTHROPIC_VERSION),
-        **{k: str(v) for k, v in (provider.extra_headers or {}).items()},
+        **egress.clean_extra_headers(provider.extra_headers),
     }
     if request.headers.get("anthropic-beta"):
         headers["anthropic-beta"] = request.headers["anthropic-beta"]
@@ -428,12 +461,15 @@ async def anthropic_messages(request: Request):
         if kind != "anthropic":
             raise GatewayError(400, "invalid_request_error", f"Model '{alias}' is not served over the Anthropic Messages API")
         upstream_body = {**body, "model": resolved.upstream_model}
-        req = gw.http.build_request(
-            "POST", _anthropic_url(resolved.provider, "messages", request), json=upstream_body,
-            headers=_anthropic_headers(gw, request, resolved.provider),
-        )
         try:
-            resp = await gw.http.send(req, stream=stream)
+            resp = await gw.send(
+                resolved.provider,
+                "POST",
+                _anthropic_url(resolved.provider, "messages", request),
+                json=upstream_body,
+                headers=_anthropic_headers(gw, request, resolved.provider),
+                stream=stream,
+            )
         except httpx.HTTPError as exc:
             gw.record(caller, resolved, alias, "llm", usage, 502, started, request_id)
             return anthropic_error(GatewayError(502, "api_error", f"Provider unreachable: {exc}"))
@@ -489,13 +525,17 @@ async def anthropic_count_tokens(request: Request):
     if resolved.provider.kind != "anthropic":
         return anthropic_error(GatewayError(400, "invalid_request_error", "count_tokens needs an Anthropic model"))
     try:
-        resp = await gw.http.post(
+        resp = await gw.send(
+            resolved.provider,
+            "POST",
             _anthropic_url(resolved.provider, "messages/count_tokens", request),
             json={**body, "model": resolved.upstream_model},
             headers=_anthropic_headers(gw, request, resolved.provider),
         )
     except httpx.HTTPError as exc:
         return anthropic_error(GatewayError(502, "api_error", f"Provider unreachable: {exc}"))
+    except GatewayError as err:
+        return anthropic_error(err)
     return Response(resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
 
 

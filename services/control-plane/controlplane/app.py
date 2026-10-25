@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from . import __version__
+from . import __version__, migrate
 from .api import admin, auth, billing, catalog, datasets, orgs, projects, proxy
 from .context import AppContext
 from .gateway import router as gateway_router
@@ -60,8 +61,8 @@ def create_app(settings: Settings | None = None, *, sandbox_driver=None) -> Fast
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
-        if not settings.is_production:
-            await ctx.db.create_all()
+        if settings.auto_migrate:
+            await asyncio.to_thread(migrate.upgrade, settings.database_url)
         async with ctx.db.sessionmaker() as db:
             await seed_catalog(db, settings, ctx.encryptor)
         await _bootstrap_admin(ctx)

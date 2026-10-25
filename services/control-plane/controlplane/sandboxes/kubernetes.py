@@ -78,8 +78,8 @@ def pod_manifest(settings: Settings, spec: SandboxSpec) -> dict[str, Any]:
                     },
                     "volumeMounts": [
                         {"name": "data", "mountPath": "/data"},
-                        {"name": "tmp", "mountPath": "/tmp"},
-                        {"name": "shm", "mountPath": "/dev/shm"},
+                        {"name": "tmp", "mountPath": "/tmp"},  # noqa: S108 - a private emptyDir
+                        {"name": "shm", "mountPath": "/dev/shm"},  # noqa: S108 - Ray object store
                     ],
                 }
             ],

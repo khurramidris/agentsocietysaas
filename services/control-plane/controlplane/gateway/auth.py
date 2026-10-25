@@ -16,7 +16,8 @@ from ..security import API_KEY_PREFIX, PROJECT_TOKEN_PREFIX, parse_composite, se
 if TYPE_CHECKING:
     from ..context import AppContext
 
-CALLER_TTL_S = 60.0
+# Revocations invalidate this replica's cache at once; other replicas follow within the TTL.
+CALLER_TTL_S = 15.0
 ROUTE_TTL_S = 30.0
 
 
@@ -118,9 +119,7 @@ class ModelResolver:
             provider = None
             for owner in (org_id, None):
                 cond = ModelRoute.org_id == owner if owner else ModelRoute.org_id.is_(None)
-                candidate = (
-                    await db.execute(select(ModelRoute).where(cond, ModelRoute.alias == alias, ModelRoute.enabled.is_(True)))
-                ).scalar_one_or_none()
+                candidate = (await db.execute(select(ModelRoute).where(cond, ModelRoute.alias == alias, ModelRoute.enabled.is_(True)))).scalar_one_or_none()
                 if candidate is None:
                     continue
                 prov = await db.get(Provider, candidate.provider_id)
@@ -128,9 +127,7 @@ class ModelResolver:
                     route, provider = candidate, prov
                     break
             if route is None and self.ctx.settings.enable_mock_provider:
-                provider = (
-                    await db.execute(select(Provider).where(Provider.org_id.is_(None), Provider.kind == "mock"))
-                ).scalar_one_or_none()
+                provider = (await db.execute(select(Provider).where(Provider.org_id.is_(None), Provider.kind == "mock"))).scalar_one_or_none()
             if provider is None:
                 raise GatewayError(404, "not_found_error", f"Model '{alias}' is not available to this organization")
             if route is not None and route.kind != kind:

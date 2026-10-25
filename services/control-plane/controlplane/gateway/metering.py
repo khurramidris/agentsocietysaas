@@ -74,11 +74,11 @@ def cost_micros(route: ModelRoute | None, usage: Usage) -> int:
     if route.long_context_tokens and usage.prompt_total > route.long_context_tokens:
         multiplier = route.long_context_multiplier or 1.0
     nanos = (
-        usage.input_tokens * route.input_nanos
-        + usage.output_tokens * route.output_nanos
-        + usage.cache_read_tokens * route.cache_read_nanos
-        + usage.cache_write_5m_tokens * route.cache_write_nanos
-        + usage.cache_write_1h_tokens * route.cache_write_1h_nanos
+        usage.input_tokens * (route.input_nanos or 0)
+        + usage.output_tokens * (route.output_nanos or 0)
+        + usage.cache_read_tokens * (route.cache_read_nanos or 0)
+        + usage.cache_write_5m_tokens * (route.cache_write_nanos or 0)
+        + usage.cache_write_1h_tokens * (route.cache_write_1h_nanos or 0)
     ) * multiplier
     return math.ceil(nanos / 1000)
 
@@ -101,6 +101,8 @@ class UsageRecorder:
     def __init__(self, ctx: AppContext) -> None:
         self.ctx = ctx
         self._pending = _Pending()
+        # Events being written by a flush: not yet reflected in the balance cache.
+        self._inflight = _Pending()
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._balance_cache: dict[str, tuple[float, int]] = {}
@@ -110,7 +112,7 @@ class UsageRecorder:
         self._pending.by_org[event["org_id"]] += int(event.get("cost_micros", 0))
 
     def pending_for(self, org_id: str) -> int:
-        return self._pending.by_org.get(org_id, 0)
+        return self._pending.by_org.get(org_id, 0) + self._inflight.by_org.get(org_id, 0)
 
     async def available_micros(self, org_id: str) -> int:
         now = time.monotonic()
@@ -127,6 +129,7 @@ class UsageRecorder:
             pending, self._pending = self._pending, _Pending()
             if not pending.events:
                 return 0
+            self._inflight = pending
             try:
                 async with self.ctx.db.sessionmaker() as db:
                     db.add_all([UsageEvent(**event) for event in pending.events])
@@ -135,11 +138,13 @@ class UsageRecorder:
                     await db.commit()
             except Exception:
                 log.exception("usage flush failed; re-queueing %d events", len(pending.events))
+                self._inflight = _Pending()
                 for event in pending.events:
                     self.record(event)
                 return 0
             for org_id in pending.by_org:
                 self._balance_cache.pop(org_id, None)
+            self._inflight = _Pending()
             return len(pending.events)
 
     async def _loop(self) -> None:

@@ -69,8 +69,7 @@ EXCLUDES: list[tuple[str, str, str]] = [
     (
         "frontend/public/monaco-editor",
         "SIZE",
-        "Pre-built copy of the MIT monaco-editor npm package (~13 MB). Restore with "
-        "scripts/restore_frontend_monaco.sh after `npm ci`.",
+        "Pre-built copy of the MIT monaco-editor npm package (~13 MB). Restore with scripts/restore_frontend_monaco.sh after `npm ci`.",
     ),
     (
         "extension/resources/readme/*.gif",
@@ -139,9 +138,7 @@ def _is_excluded(rel: str) -> tuple[str, str, str] | None:
 
 
 def _git(args: list[str], cwd: Path) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
 def _copy_filtered(src_root: Path, dst_root: Path) -> tuple[int, dict[str, int]]:

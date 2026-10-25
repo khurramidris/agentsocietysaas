@@ -67,13 +67,17 @@ class SandboxManager:
     def agent_headers(self, project: Project) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.agent_secret(project)}"}
 
+    async def revoke_project_tokens(self, db: AsyncSession, project_id: str) -> None:
+        """Revoke the project's sandbox tokens; call :meth:`forget_tokens` after committing."""
+        await db.execute(update(ProjectToken).where(ProjectToken.project_id == project_id, ProjectToken.revoked_at.is_(None)).values(revoked_at=utcnow()))
+
+    def forget_tokens(self) -> None:
+        """Drop cached gateway credentials so committed revocations apply on this replica now."""
+        self.ctx.gateway.callers.invalidate()
+
     async def issue_project_token(self, db: AsyncSession, project: Project) -> str:
         """Revoke previous sandbox tokens and mint a new one (rotated on each start)."""
-        await db.execute(
-            update(ProjectToken)
-            .where(ProjectToken.project_id == project.id, ProjectToken.revoked_at.is_(None))
-            .values(revoked_at=utcnow())
-        )
+        await self.revoke_project_tokens(db, project.id)
         token = new_composite(PROJECT_TOKEN_PREFIX)
         db.add(ProjectToken(id=f"ptk_{token.ident}", project_id=project.id, org_id=project.org_id, secret_hash=sha256_hex(token.secret)))
         return token.value
@@ -123,9 +127,7 @@ class SandboxManager:
             )
         ).all()
         if len(running) >= plan.max_running_sandboxes:
-            raise HTTPException(
-                409, f"The {plan.label} plan allows {plan.max_running_sandboxes} running sandbox(es); stop one first"
-            )
+            raise HTTPException(409, f"The {plan.label} plan allows {plan.max_running_sandboxes} running sandbox(es); stop one first")
         return org
 
     async def _is_alive(self, project: Project) -> bool:
@@ -147,20 +149,15 @@ class SandboxManager:
         project.sandbox_status = "stopped"
         project.sandbox_endpoint = None
         project.sandbox_error = "sandbox exited unexpectedly"
-        await db.execute(
-            update(ProjectToken)
-            .where(ProjectToken.project_id == project.id, ProjectToken.revoked_at.is_(None))
-            .values(revoked_at=utcnow())
-        )
+        await self.revoke_project_tokens(db, project.id)
         await db.commit()
+        self.forget_tokens()
 
     async def reconcile_all(self) -> int:
         """Mark sandboxes that no longer exist (e.g. after a restart) as stopped. Returns how many."""
         dead = 0
         async with self.ctx.db.sessionmaker() as db:
-            projects = (
-                await db.execute(select(Project).where(Project.sandbox_status.in_(("running", "starting", "stopping"))))
-            ).scalars().all()
+            projects = (await db.execute(select(Project).where(Project.sandbox_status.in_(("running", "starting", "stopping"))))).scalars().all()
             for project in projects:
                 try:
                     async with self._lock(project.id):
@@ -195,6 +192,7 @@ class SandboxManager:
             project.sandbox_status = "starting"
             project.sandbox_error = None
             await db.commit()
+            self.forget_tokens()
             try:
                 info = await self.driver.start(spec)
             except Exception as exc:
@@ -233,9 +231,7 @@ class SandboxManager:
                         return
                 if project.sandbox_endpoint:
                     with contextlib.suppress(httpx.HTTPError):
-                        resp = await self.http.get(
-                            f"{project.sandbox_endpoint}/status", headers=self.agent_headers(project), timeout=5
-                        )
+                        resp = await self.http.get(f"{project.sandbox_endpoint}/status", headers=self.agent_headers(project), timeout=5)
                         if resp.status_code == 200:
                             project.sandbox_status = "running"
                             await db.commit()
@@ -267,12 +263,9 @@ class SandboxManager:
                 project.sandbox_status = "stopped"
                 project.sandbox_endpoint = None
                 project.sandbox_error = None if reason == "user" else f"stopped: {reason}"
-                await db.execute(
-                    update(ProjectToken)
-                    .where(ProjectToken.project_id == project.id, ProjectToken.revoked_at.is_(None))
-                    .values(revoked_at=utcnow())
-                )
+                await self.revoke_project_tokens(db, project.id)
                 await db.commit()
+                self.forget_tokens()
         log.info("sandbox %s stopped (%s)", project.id, reason)
         return project
 
@@ -329,9 +322,7 @@ class SandboxManager:
         """Bill running sandboxes, stop idle or unfunded ones, mark dead ones."""
         stats = {"billed": 0, "stopped_idle": 0, "stopped_credit": 0, "errors": 0}
         async with self.ctx.db.sessionmaker() as db:
-            projects = (
-                await db.execute(select(Project).where(Project.sandbox_status.in_(("running", "starting"))))
-            ).scalars().all()
+            projects = (await db.execute(select(Project).where(Project.sandbox_status.in_(("running", "starting"))))).scalars().all()
             for project in projects:
                 try:
                     await self._bill_compute(db, project)
@@ -341,9 +332,7 @@ class SandboxManager:
                     agent = None
                     if project.sandbox_status == "running" and project.sandbox_endpoint:
                         with contextlib.suppress(httpx.HTTPError, ValueError):
-                            resp = await self.http.get(
-                                f"{project.sandbox_endpoint}/status", headers=self.agent_headers(project), timeout=5
-                            )
+                            resp = await self.http.get(f"{project.sandbox_endpoint}/status", headers=self.agent_headers(project), timeout=5)
                             agent = resp.json() if resp.status_code == 200 else None
                         if agent is None:
                             info = await self.driver.inspect(project.id)

@@ -179,11 +179,7 @@ async def get_experiment(request: Request, h: str, e: str):
             steps = {"_error": f"invalid YAML: {exc}"}
     artifacts = []
     if p["artifacts"].is_dir():
-        artifacts = [
-            {"name": a.name, "size": a.stat().st_size, "mtime": a.stat().st_mtime}
-            for a in sorted(p["artifacts"].iterdir())
-            if a.is_file()
-        ]
+        artifacts = [{"name": a.name, "size": a.stat().st_size, "mtime": a.stat().st_mtime} for a in sorted(p["artifacts"].iterdir()) if a.is_file()]
     return {
         **experiment_status(ws, h, e),
         "init_config": _read_json(p["init_config"]),
@@ -291,13 +287,21 @@ async def start_run(request: Request, h: str, e: str, body: RunBody | None = Non
     run_dir.mkdir(parents=True, exist_ok=True)
     experiment_key = f"{h}_{e}"
     argv = [
-        settings.python, "-m", "agentsociety2.society.cli",
-        "--config", str(p["init_config"]),
-        "--steps", str(p["steps"]),
-        "--run-dir", str(run_dir),
-        "--experiment-id", experiment_key,
-        "--log-level", body.log_level,
-        "--log-file", str(run_dir / "output.log"),
+        settings.python,
+        "-m",
+        "agentsociety2.society.cli",
+        "--config",
+        str(p["init_config"]),
+        "--steps",
+        str(p["steps"]),
+        "--run-dir",
+        str(run_dir),
+        "--experiment-id",
+        experiment_key,
+        "--log-level",
+        body.log_level,
+        "--log-file",
+        str(run_dir / "output.log"),
     ]
     if body.resume:
         argv.append("--resume")
@@ -306,7 +310,7 @@ async def start_run(request: Request, h: str, e: str, body: RunBody | None = Non
     if body.replay_disable:
         argv.append("--replay-disable")
     with open(run_dir / "stdout.log", "w", encoding="utf-8") as out, open(run_dir / "stderr.log", "w", encoding="utf-8") as err:
-        proc = subprocess.Popen(  # noqa: S603 - argv list, no shell
+        proc = subprocess.Popen(  # noqa: ASYNC220 - spawning returns immediately
             argv,
             cwd=ws,
             env=child_env(settings),

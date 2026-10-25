@@ -180,6 +180,13 @@ class AuthenticatedMCP:
             return
         from fastapi import Request
 
+        # Clients use ".../mcp/" (agentsociety2 normalises to a trailing slash); serve it
+        # directly instead of redirecting, since redirects built from the Host header
+        # break behind TLS-terminating proxies and some clients do not re-POST.
+        if scope["path"].endswith("/mcp/"):
+            scope = {**scope, "path": scope["path"][:-1]}
+            if scope.get("raw_path", b"").endswith(b"/mcp/"):
+                scope["raw_path"] = scope["raw_path"][:-1]
         request = Request(scope, receive)
         try:
             caller = await self.ctx.gateway.callers.resolve(request)

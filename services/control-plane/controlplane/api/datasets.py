@@ -11,6 +11,7 @@ one for review and approval by a platform admin publishes it to everyone.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -43,6 +44,7 @@ CATEGORIES = [
 ]
 PART_SIZE = 10 * 1024 * 1024  # must match create.py
 MAX_PACKAGE_BYTES = 5 * 1024 * 1024 * 1024
+MAX_META_BYTES = 1024 * 1024  # dataset.json / README.md
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,99}$")
 
 
@@ -72,9 +74,7 @@ async def identity(request: Request, db: AsyncSession) -> Identity:
     rows = (await db.execute(select(Membership).where(Membership.user_id == principal.user.id))).scalars().all()
     org_ids = [m.org_id for m in rows if m.role != "viewer"] + [m.org_id for m in rows if m.role == "viewer"]
     requested = request.headers.get("x-org-id") or request.query_params.get("org_id")
-    acting = requested if requested in {m.org_id for m in rows if m.role != "viewer"} else next(
-        (m.org_id for m in rows if m.role != "viewer"), None
-    )
+    acting = requested if requested in {m.org_id for m in rows if m.role != "viewer"} else next((m.org_id for m in rows if m.role != "viewer"), None)
     return Identity(org_ids=org_ids, acting_org_id=acting, user_id=principal.user.id)
 
 
@@ -241,11 +241,12 @@ async def init_upload(dataset_id: str, body: InitUpload, request: Request, db: A
         raise HTTPException(413, "Package too large")
     parts = max(1, math.ceil(body.file_size / PART_SIZE))
     upload = DatasetUpload(dataset_id=ds.id, part_size=PART_SIZE, total_size=body.file_size, parts=parts)
-    db.add(upload)
-    await db.commit()
     blobs = request.app.state.ctx.blobs
     key = f"datasets/{ds.id}/{upload.id}.zip"
-    part_urls = [{"part_number": n, "upload_url": await blobs.part_upload_url(key, n)} for n in range(1, parts + 1)]
+    upload.backend_upload_id = await blobs.begin_upload(key)
+    db.add(upload)
+    await db.commit()
+    part_urls = [{"part_number": n, "upload_url": await blobs.part_upload_url(key, n, upload.backend_upload_id)} for n in range(1, parts + 1)]
     return {"upload_id": upload.id, "part_size": PART_SIZE, "part_urls": part_urls}
 
 
@@ -255,11 +256,20 @@ async def put_part(key: str, request: Request, part: int = Query(..., ge=1), exp
     blobs = request.app.state.ctx.blobs
     if not isinstance(blobs, LocalBlobStore) or not blobs.verify_part(key, part, exp, sig):
         raise HTTPException(403, "Invalid or expired upload URL")
-    data = await request.body()
-    if len(data) > PART_SIZE:
-        raise HTTPException(413, "Part too large")
-    blobs.write_part(key, part, data)
-    return {"part_number": part, "size": len(data)}
+    target = blobs.part_path(key, part)
+    partial = target.with_suffix(".partial")
+    size = 0
+    try:
+        with open(partial, "wb") as out:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > PART_SIZE:
+                    raise HTTPException(413, "Part too large")
+                out.write(chunk)
+        partial.replace(target)
+    finally:
+        partial.unlink(missing_ok=True)
+    return {"part_number": part, "size": size}
 
 
 @router.get("/api/v1/blobs/download/{key:path}")
@@ -290,23 +300,31 @@ def inspect_package(path: Path, dataset_id: str) -> dict[str, Any]:
         names = [i.filename for i in infos]
         if any(n.startswith("/") or ".." in Path(n).parts for n in names):
             raise HTTPException(400, "Archive contains unsafe paths")
+        by_name = {i.filename: i for i in infos}
         meta_name = next((n for n in names if Path(n).name == "dataset.json"), None)
         if meta_name is None:
             raise HTTPException(400, "dataset.json not found in the archive")
+        if by_name[meta_name].file_size > MAX_META_BYTES:
+            raise HTTPException(400, "dataset.json is too large")
         try:
             meta = json.loads(zf.read(meta_name))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             raise HTTPException(400, "dataset.json is not valid JSON") from None
+        if not isinstance(meta, dict):
+            raise HTTPException(400, "dataset.json must contain a JSON object")
         if meta.get("id") and meta["id"] != dataset_id:
             raise HTTPException(400, f"dataset.json id {meta['id']!r} does not match {dataset_id!r}")
         readme_name = next((n for n in names if Path(n).name.lower() == "readme.md"), None)
-        readme = zf.read(readme_name).decode("utf-8", errors="replace")[:200_000] if readme_name else ""
+        readme = ""
+        if readme_name:
+            with zf.open(readme_name) as fh:  # bounded read: never inflate more than needed
+                readme = fh.read(MAX_META_BYTES).decode("utf-8", errors="replace")[:200_000]
         prefix = ""
         if names and all("/" in n for n in names):
             first = names[0].split("/", 1)[0] + "/"
             if all(n.startswith(first) for n in names):
                 prefix = first
-        files = [{"path": i.filename[len(prefix):], "size_bytes": i.file_size} for i in infos]
+        files = [{"path": i.filename[len(prefix) :], "size_bytes": i.file_size} for i in infos]
     return {"meta": meta, "readme": readme, "files": files}
 
 
@@ -321,10 +339,17 @@ async def complete_upload(dataset_id: str, body: CompleteUpload, request: Reques
     blobs = request.app.state.ctx.blobs
     key = f"datasets/{ds.id}/{upload.id}.zip"
     try:
-        size = await blobs.complete_parts(key, upload.parts)
+        size = await blobs.complete_parts(key, upload.parts, upload.backend_upload_id)
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc)) from None
-    info = inspect_package(await blobs.open_local(key), ds.id)
+    async with blobs.local_copy(key) as local:
+        try:
+            info = await asyncio.to_thread(inspect_package, local, ds.id)
+        except HTTPException:
+            await blobs.delete(key)
+            upload.status = "rejected"
+            await db.commit()
+            raise
     previous = ds.package_key
     ds.package_key = key
     ds.package_size_bytes = size

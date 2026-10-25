@@ -59,7 +59,9 @@ async def stats(db: AsyncSession = Depends(get_db)):
         "orgs": (await db.execute(count(Organization))).scalar_one(),
         "projects": (await db.execute(count(Project).where(Project.archived_at.is_(None)))).scalar_one(),
         "running_sandboxes": (await db.execute(count(Project).where(Project.sandbox_status.in_(("running", "starting"))))).scalar_one(),
-        "usage_24h_usd": round(int((await db.execute(select(func.sum(UsageEvent.cost_micros)).where(UsageEvent.created_at >= since))).scalar_one() or 0) / 1e6, 4),
+        "usage_24h_usd": round(
+            int((await db.execute(select(func.sum(UsageEvent.cost_micros)).where(UsageEvent.created_at >= since))).scalar_one() or 0) / 1e6, 4
+        ),
         "requests_24h": (await db.execute(count(UsageEvent).where(UsageEvent.created_at >= since))).scalar_one(),
         "datasets_pending_review": (await db.execute(count(Dataset).where(Dataset.status == "pending_review"))).scalar_one(),
     }
@@ -79,10 +81,14 @@ class GrantBody(BaseModel):
 
 
 @router.post("/orgs/{org_id}/credits")
-async def grant_credits(org_id: str, body: GrantBody, request: Request, principal: Principal = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+async def grant_credits(
+    org_id: str, body: GrantBody, request: Request, principal: Principal = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)
+):
     if await db.get(Organization, org_id) is None:
         raise HTTPException(404, "Organization not found")
-    entry = await adjust_balance(db, org_id, usd_to_micros(body.amount_usd), "grant" if body.amount_usd >= 0 else "adjustment", body.description, created_by=principal.user_id)
+    entry = await adjust_balance(
+        db, org_id, usd_to_micros(body.amount_usd), "grant" if body.amount_usd >= 0 else "adjustment", body.description, created_by=principal.user_id
+    )
     audit(db, request, "admin.credits_adjusted", org_id=org_id, user_id=principal.user_id, amount_usd=body.amount_usd)
     await db.commit()
     return {"balance_usd": round(entry.balance_after / 1e6, 6) if entry else None}
@@ -112,7 +118,15 @@ async def list_users(db: AsyncSession = Depends(get_db), q: str | None = None, l
         stmt = stmt.where(User.email.ilike(f"%{q}%") | User.name.ilike(f"%{q}%"))
     return {
         "users": [
-            {"id": u.id, "email": u.email, "name": u.name, "is_active": u.is_active, "is_platform_admin": u.is_platform_admin, "created_at": u.created_at, "last_login_at": u.last_login_at}
+            {
+                "id": u.id,
+                "email": u.email,
+                "name": u.name,
+                "is_active": u.is_active,
+                "is_platform_admin": u.is_platform_admin,
+                "created_at": u.created_at,
+                "last_login_at": u.last_login_at,
+            }
             for u in (await db.execute(stmt)).scalars().all()
         ]
     }
@@ -124,7 +138,9 @@ class UserPatch(BaseModel):
 
 
 @router.patch("/users/{user_id}")
-async def patch_user(user_id: str, body: UserPatch, request: Request, principal: Principal = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+async def patch_user(
+    user_id: str, body: UserPatch, request: Request, principal: Principal = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)
+):
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -142,7 +158,20 @@ async def patch_user(user_id: str, body: UserPatch, request: Request, principal:
 @router.get("/datasets")
 async def review_queue(db: AsyncSession = Depends(get_db), status: str = "pending_review"):
     rows = (await db.execute(select(Dataset).where(Dataset.status == status).order_by(Dataset.updated_at.desc()))).scalars().all()
-    return {"datasets": [{"id": d.id, "org_id": d.org_id, "name": d.name, "category": d.category, "version": d.version, "package_size_bytes": d.package_size_bytes, "updated_at": d.updated_at} for d in rows]}
+    return {
+        "datasets": [
+            {
+                "id": d.id,
+                "org_id": d.org_id,
+                "name": d.name,
+                "category": d.category,
+                "version": d.version,
+                "package_size_bytes": d.package_size_bytes,
+                "updated_at": d.updated_at,
+            }
+            for d in rows
+        ]
+    }
 
 
 @router.post("/sandboxes/reap")
@@ -157,7 +186,17 @@ async def audit_log(db: AsyncSession = Depends(get_db), org_id: str | None = Non
         stmt = stmt.where(AuditLog.org_id == org_id)
     return {
         "events": [
-            {"id": e.id, "org_id": e.org_id, "user_id": e.user_id, "action": e.action, "target_type": e.target_type, "target_id": e.target_id, "details": e.details, "ip": e.ip, "created_at": e.created_at}
+            {
+                "id": e.id,
+                "org_id": e.org_id,
+                "user_id": e.user_id,
+                "action": e.action,
+                "target_type": e.target_type,
+                "target_id": e.target_id,
+                "details": e.details,
+                "ip": e.ip,
+                "created_at": e.created_at,
+            }
             for e in (await db.execute(stmt)).scalars().all()
         ]
     }

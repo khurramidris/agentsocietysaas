@@ -1,0 +1,26 @@
+# Lint/format settings for the platform's own Python code (services/, scripts/).
+# The vendored upstream keeps its own configuration and is not linted here.
+target-version = "py311"
+line-length = 160
+extend-exclude = ["upstream", ".data", "**/node_modules"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
+ignore = [
+    "E501",    # long lines are allowed (formatter handles wrapping where it matters)
+    "S101",    # asserts are fine in tests
+    "S104",    # binding to 0.0.0.0 is intended inside containers
+    "S105", "S106",  # "token"/"secret" names are not hard-coded credentials
+    "S603", "S607",  # subprocesses run fixed argv lists
+    "SIM105",  # contextlib.suppress vs try/except/pass: either is fine
+    "RUF001", "RUF002", "RUF003",
+    "RUF012",
+    "B008",    # FastAPI dependency defaults
+    "ASYNC109", "ASYNC110", "ASYNC230", "ASYNC240", "ASYNC250",
+]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S", "ASYNC", "B017"]
+
+[lint.isort]
+known-first-party = ["controlplane", "sandboxd"]

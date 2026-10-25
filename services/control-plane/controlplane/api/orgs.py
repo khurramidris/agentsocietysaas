@@ -48,9 +48,7 @@ class CreateOrg(BaseModel):
 
 @router.get("")
 async def list_orgs(user: User = Depends(get_user), db: AsyncSession = Depends(get_db)):
-    rows = (
-        await db.execute(select(Membership, Organization).join(Organization).where(Membership.user_id == user.id))
-    ).all()
+    rows = (await db.execute(select(Membership, Organization).join(Organization).where(Membership.user_id == user.id))).all()
     return {"orgs": [org_out(org, m.role) for m, org in rows]}
 
 
@@ -93,8 +91,10 @@ async def list_members(org_id: str, principal: Principal = Depends(get_principal
     await org_access(db, principal, org_id)
     rows = (await db.execute(select(Membership, User).join(User).where(Membership.org_id == org_id))).all()
     invites = (
-        await db.execute(select(Invitation).where(Invitation.org_id == org_id, Invitation.accepted_at.is_(None), Invitation.expires_at > utcnow()))
-    ).scalars().all()
+        (await db.execute(select(Invitation).where(Invitation.org_id == org_id, Invitation.accepted_at.is_(None), Invitation.expires_at > utcnow())))
+        .scalars()
+        .all()
+    )
     return {
         "members": [{"user_id": u.id, "email": u.email, "name": u.name, "role": m.role, "joined_at": m.created_at} for m, u in rows],
         "invitations": [{"id": i.id, "email": i.email, "role": i.role, "expires_at": i.expires_at} for i in invites],
@@ -109,8 +109,21 @@ async def _owner_count(db: AsyncSession, org_id: str) -> int:
     return (await db.execute(select(func.count(Membership.id)).where(Membership.org_id == org_id, Membership.role == "owner"))).scalar_one()
 
 
+async def _revoke_member_keys(db: AsyncSession, org_id: str, user_id: str, max_role: str | None) -> int:
+    """Revoke the member's API keys in this org that exceed ``max_role`` (all when None)."""
+    keys = (await db.execute(select(ApiKey).where(ApiKey.org_id == org_id, ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None)))).scalars().all()
+    revoked = 0
+    for key in keys:
+        if max_role is None or ROLE_RANK[key.role] > ROLE_RANK[max_role]:
+            key.revoked_at = utcnow()
+            revoked += 1
+    return revoked
+
+
 @router.patch("/{org_id}/members/{user_id}")
-async def change_role(org_id: str, user_id: str, body: RoleBody, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
+async def change_role(
+    org_id: str, user_id: str, body: RoleBody, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)
+):
     if body.role not in ROLES:
         raise HTTPException(400, f"role must be one of {ROLES}")
     access = await org_access(db, principal, org_id, "admin")
@@ -122,9 +135,22 @@ async def change_role(org_id: str, user_id: str, body: RoleBody, request: Reques
     if member.role == "owner" and body.role != "owner" and await _owner_count(db, org_id) <= 1:
         raise HTTPException(409, "An organization needs at least one owner")
     member.role = body.role
-    audit(db, request, "org.member_role_changed", org_id=org_id, user_id=principal.user_id, target_type="user", target_id=user_id, role=body.role)
+    revoked = await _revoke_member_keys(db, org_id, user_id, body.role)
+    audit(
+        db,
+        request,
+        "org.member_role_changed",
+        org_id=org_id,
+        user_id=principal.user_id,
+        target_type="user",
+        target_id=user_id,
+        role=body.role,
+        api_keys_revoked=revoked,
+    )
     await db.commit()
-    return {"user_id": user_id, "role": body.role}
+    if revoked:
+        ctx(request).gateway.invalidate()
+    return {"user_id": user_id, "role": body.role, "api_keys_revoked": revoked}
 
 
 @router.delete("/{org_id}/members/{user_id}")
@@ -140,9 +166,12 @@ async def remove_member(org_id: str, user_id: str, request: Request, principal: 
         if await _owner_count(db, org_id) <= 1:
             raise HTTPException(409, "An organization needs at least one owner")
     await db.delete(member)
-    audit(db, request, "org.member_removed", org_id=org_id, user_id=principal.user_id, target_type="user", target_id=user_id)
+    revoked = await _revoke_member_keys(db, org_id, user_id, None)
+    audit(db, request, "org.member_removed", org_id=org_id, user_id=principal.user_id, target_type="user", target_id=user_id, api_keys_revoked=revoked)
     await db.commit()
-    return {"removed": user_id}
+    if revoked:
+        ctx(request).gateway.invalidate()
+    return {"removed": user_id, "api_keys_revoked": revoked}
 
 
 class InviteBody(BaseModel):
@@ -156,7 +185,14 @@ async def invite(org_id: str, body: InviteBody, request: Request, principal: Pri
     if body.role not in ROLES or (body.role == "owner" and access.role != "owner"):
         raise HTTPException(400, "Invalid role for invitation")
     raw = random_token(32)
-    inv = Invitation(org_id=org_id, email=body.email.lower(), role=body.role, token_hash=sha256_hex(raw), invited_by=principal.user_id, expires_at=utcnow() + timedelta(days=7))
+    inv = Invitation(
+        org_id=org_id,
+        email=body.email.lower(),
+        role=body.role,
+        token_hash=sha256_hex(raw),
+        invited_by=principal.user_id,
+        expires_at=utcnow() + timedelta(days=7),
+    )
     db.add(inv)
     audit(db, request, "org.member_invited", org_id=org_id, user_id=principal.user_id, target_type="invitation", email=body.email.lower(), role=body.role)
     await db.commit()

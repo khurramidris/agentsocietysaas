@@ -51,7 +51,9 @@ def test_files_roundtrip(client):
     assert client.get("/files/content", headers=AUTH, params={"path": "../../etc/passwd"}).status_code == 400
 
     up = client.post(
-        "/files/upload", headers=AUTH, data={"directory": "user_data"},
+        "/files/upload",
+        headers=AUTH,
+        data={"directory": "user_data"},
         files=[("files", ("survey.csv", b"id,score\n1,5\n", "text/csv"))],
     )
     assert up.status_code == 200 and up.json()["saved"][0]["path"] == "user_data/survey.csv"

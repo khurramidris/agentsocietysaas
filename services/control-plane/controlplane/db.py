@@ -33,6 +33,15 @@ class Base(DeclarativeBase):
     }
 
 
+@event.listens_for(Base, "init", propagate=True)
+def _assign_generated_id(target: Base, args: tuple, kwargs: dict[str, Any]) -> None:
+    """Give generated string ids (``prj_...``) at construction, not only on flush, so new
+    objects can be referenced (audit entries, storage keys) before they are flushed."""
+    column = target.__table__.c.get("id")
+    if kwargs.get("id") is None and column is not None and column.default is not None and column.default.is_callable:
+        kwargs["id"] = column.default.arg(None)
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 

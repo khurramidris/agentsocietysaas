@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit import audit
 from ..deps import Principal, ctx, get_db, get_principal, org_access, require_platform_admin
+from ..gateway import egress
 from ..models import ModelRoute, Provider
 
 router = APIRouter(tags=["models"])
@@ -83,7 +84,20 @@ class RouteBody(BaseModel):
 
 
 def _nanos(usd: float) -> int:
-    return int(round(usd * 1000))
+    return round(usd * 1000)
+
+
+DEFAULT_API_BASES = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com"}
+
+
+def _api_base(request: Request, org_id: str | None, kind: str, api_base: str) -> str:
+    base = api_base.strip().rstrip("/") or DEFAULT_API_BASES.get(kind, "")
+    if not base or org_id is None:
+        return base  # platform providers are operator-configured and trusted
+    try:
+        return egress.validate_provider_url(base, allow_private=ctx(request).settings.allow_private_provider_urls)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
 
 
 async def _create_provider(db: AsyncSession, request: Request, org_id: str | None, body: ProviderBody) -> Provider:
@@ -93,9 +107,9 @@ async def _create_provider(db: AsyncSession, request: Request, org_id: str | Non
         org_id=org_id,
         name=body.name,
         kind=body.kind,
-        api_base=body.api_base.rstrip("/"),
+        api_base=_api_base(request, org_id, body.kind, body.api_base),
         api_key_enc=ctx(request).encryptor.encrypt(body.api_key) if body.api_key else None,
-        extra_headers=body.extra_headers,
+        extra_headers=egress.clean_extra_headers(body.extra_headers),
         enabled=body.enabled,
     )
     db.add(provider)
@@ -143,8 +157,8 @@ async def _create_route(db: AsyncSession, request: Request, org_id: str | None, 
 async def org_models(org_id: str, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
     await org_access(db, principal, org_id)
     routes = (
-        await db.execute(select(ModelRoute).where((ModelRoute.org_id == org_id) | ModelRoute.org_id.is_(None)).order_by(ModelRoute.alias))
-    ).scalars().all()
+        (await db.execute(select(ModelRoute).where((ModelRoute.org_id == org_id) | ModelRoute.org_id.is_(None)).order_by(ModelRoute.alias))).scalars().all()
+    )
     providers = (await db.execute(select(Provider).where(Provider.org_id == org_id))).scalars().all()
     return {
         "models": [route_out(r) for r in routes if r.enabled or r.org_id == org_id],
@@ -154,7 +168,9 @@ async def org_models(org_id: str, request: Request, principal: Principal = Depen
 
 
 @router.post("/api/v1/orgs/{org_id}/providers")
-async def org_add_provider(org_id: str, body: ProviderBody, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
+async def org_add_provider(
+    org_id: str, body: ProviderBody, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)
+):
     await org_access(db, principal, org_id, "admin")
     provider = await _create_provider(db, request, org_id, body)
     audit(db, request, "org.provider_added", org_id=org_id, user_id=principal.user_id, target_type="provider", target_id=provider.id, kind=body.kind)
@@ -163,7 +179,9 @@ async def org_add_provider(org_id: str, body: ProviderBody, request: Request, pr
 
 
 @router.delete("/api/v1/orgs/{org_id}/providers/{provider_id}")
-async def org_delete_provider(org_id: str, provider_id: str, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)):
+async def org_delete_provider(
+    org_id: str, provider_id: str, request: Request, principal: Principal = Depends(get_principal), db: AsyncSession = Depends(get_db)
+):
     await org_access(db, principal, org_id, "admin")
     provider = await db.get(Provider, provider_id)
     if provider is None or provider.org_id != org_id:
@@ -220,7 +238,7 @@ async def admin_patch_provider(provider_id: str, body: ProviderPatch, request: R
     if provider is None or provider.org_id is not None:
         raise HTTPException(404, "Provider not found")
     if body.api_base is not None:
-        provider.api_base = body.api_base.rstrip("/")
+        provider.api_base = _api_base(request, None, provider.kind, body.api_base)
     if body.api_key is not None:
         provider.api_key_enc = ctx(request).encryptor.encrypt(body.api_key) if body.api_key else None
     if body.enabled is not None:

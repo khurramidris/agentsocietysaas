@@ -57,7 +57,10 @@ def test_full_bootstrap_matches_upstream_layout(make_settings):
     # upstream launcher works in the new workspace
     out = subprocess.run(
         [sys.executable, ".agentsociety/bin/ags.py", "research-pipeline", "where-am-i", "--json"],
-        cwd=ws, capture_output=True, text=True, timeout=120,
+        cwd=ws,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout)["current_stage"] == "literature_search"

@@ -165,9 +165,8 @@ async def write_text(request: Request, body: WriteText):
     target = resolve_in_workspace(settings.workspace, body.path)
     if target.is_dir():
         raise HTTPException(409, "Path is a directory")
-    if body.expected_mtime is not None and target.exists():
-        if abs(target.stat().st_mtime - body.expected_mtime) > 1e-6:
-            raise HTTPException(409, "File changed since it was read")
+    if body.expected_mtime is not None and target.exists() and abs(target.stat().st_mtime - body.expected_mtime) > 1e-6:
+        raise HTTPException(409, "File changed since it was read")
     if body.create_dirs:
         target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(f".{target.name}.sandboxd-tmp")

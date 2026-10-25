@@ -27,7 +27,7 @@ log = logging.getLogger("controlplane.gateway")
 
 
 def usd_per_mtok(value: float) -> int:
-    return int(round(value * 1000))
+    return round(value * 1000)
 
 
 # alias, description, input, output, cache read, cache write 5m, cache write 1h, long ctx tokens, multiplier
@@ -43,9 +43,7 @@ MOCK_MODELS = ["mock", "mock-embedding"]
 
 
 async def _ensure_provider(db: AsyncSession, *, name: str, kind: str, api_base: str, api_key_enc: str | None) -> Provider:
-    existing = (
-        await db.execute(select(Provider).where(Provider.org_id.is_(None), Provider.name == name))
-    ).scalar_one_or_none()
+    existing = (await db.execute(select(Provider).where(Provider.org_id.is_(None), Provider.name == name))).scalar_one_or_none()
     if existing is not None:
         if api_key_enc and not existing.api_key_enc:
             existing.api_key_enc = api_key_enc
@@ -57,9 +55,7 @@ async def _ensure_provider(db: AsyncSession, *, name: str, kind: str, api_base: 
 
 
 async def _ensure_route(db: AsyncSession, provider: Provider, alias: str, **fields) -> None:
-    existing = (
-        await db.execute(select(ModelRoute).where(ModelRoute.org_id.is_(None), ModelRoute.alias == alias))
-    ).scalar_one_or_none()
+    existing = (await db.execute(select(ModelRoute).where(ModelRoute.org_id.is_(None), ModelRoute.alias == alias))).scalar_one_or_none()
     if existing is None:
         db.add(ModelRoute(alias=alias, provider_id=provider.id, **fields))
 
@@ -68,21 +64,34 @@ async def seed_catalog(db: AsyncSession, settings: Settings, encryptor: Encrypto
     mult = settings.price_multiplier
     if settings.anthropic_api_key:
         provider = await _ensure_provider(
-            db, name="anthropic", kind="anthropic", api_base=settings.anthropic_api_base,
+            db,
+            name="anthropic",
+            kind="anthropic",
+            api_base=settings.anthropic_api_base,
             api_key_enc=encryptor.encrypt(settings.anthropic_api_key),
         )
         for alias, desc, inp, out, cr, cw5, cw1h, lct, lcm in ANTHROPIC_MODELS:
             await _ensure_route(
-                db, provider, alias,
-                upstream_model=alias, kind="chat", description=desc,
-                input_nanos=usd_per_mtok(inp * mult), output_nanos=usd_per_mtok(out * mult),
-                cache_read_nanos=usd_per_mtok(cr * mult), cache_write_nanos=usd_per_mtok(cw5 * mult),
+                db,
+                provider,
+                alias,
+                upstream_model=alias,
+                kind="chat",
+                description=desc,
+                input_nanos=usd_per_mtok(inp * mult),
+                output_nanos=usd_per_mtok(out * mult),
+                cache_read_nanos=usd_per_mtok(cr * mult),
+                cache_write_nanos=usd_per_mtok(cw5 * mult),
                 cache_write_1h_nanos=usd_per_mtok(cw1h * mult),
-                long_context_tokens=lct, long_context_multiplier=lcm,
+                long_context_tokens=lct,
+                long_context_multiplier=lcm,
             )
     if settings.openai_api_key:
         await _ensure_provider(
-            db, name="openai", kind="openai", api_base=settings.openai_api_base,
+            db,
+            name="openai",
+            kind="openai",
+            api_base=settings.openai_api_base,
             api_key_enc=encryptor.encrypt(settings.openai_api_key),
         )
     if settings.enable_mock_provider:
@@ -102,7 +111,10 @@ async def load_catalog_file(db: AsyncSession, path: Path, encryptor: Encryptor, 
         key_env = item.get("api_key_env")
         key = os.environ.get(key_env, "") if key_env else ""
         providers[item["name"]] = await _ensure_provider(
-            db, name=item["name"], kind=item["kind"], api_base=item.get("api_base", ""),
+            db,
+            name=item["name"],
+            kind=item["kind"],
+            api_base=item.get("api_base", ""),
             api_key_enc=encryptor.encrypt(key) if key else None,
         )
     for model in data.get("models", []):
@@ -111,7 +123,9 @@ async def load_catalog_file(db: AsyncSession, path: Path, encryptor: Encryptor, 
             log.warning("catalog model %s references unknown provider %s", model.get("alias"), model.get("provider"))
             continue
         await _ensure_route(
-            db, provider, model["alias"],
+            db,
+            provider,
+            model["alias"],
             upstream_model=model.get("upstream_model", model["alias"]),
             kind=model.get("kind", "chat"),
             description=model.get("description", ""),

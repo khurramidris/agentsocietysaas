@@ -212,7 +212,7 @@ def _import_zip(settings, archive: Path, overwrite: bool) -> dict:
             if all(n.split("/", 1)[0] == first for n in names):
                 prefix = first + "/"
         for member, target in members:
-            rel = member.filename[len(prefix):] if prefix and member.filename.startswith(prefix) else member.filename
+            rel = member.filename[len(prefix) :] if prefix and member.filename.startswith(prefix) else member.filename
             if not rel or rel.endswith("/"):
                 continue
             target = Path(os.path.realpath(settings.workspace / rel))

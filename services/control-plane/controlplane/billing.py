@@ -13,6 +13,7 @@ import json
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy import select, update
@@ -58,7 +59,7 @@ def plan_for(org: Organization) -> Plan:
 
 
 def usd_to_micros(usd: float) -> int:
-    return int(round(usd * MICROS))
+    return round(usd * MICROS)
 
 
 async def adjust_balance(
@@ -104,11 +105,7 @@ async def adjust_balance(
 async def charge_usage(db: AsyncSession, org_id: str, cost_micros: int) -> None:
     """Debit metered usage (details live in usage_events, not the ledger)."""
     if cost_micros:
-        await db.execute(
-            update(Organization)
-            .where(Organization.id == org_id)
-            .values(balance_micros=Organization.balance_micros - cost_micros)
-        )
+        await db.execute(update(Organization).where(Organization.id == org_id).values(balance_micros=Organization.balance_micros - cost_micros))
 
 
 # ------------------------------------------------------------------------- Stripe
@@ -132,8 +129,12 @@ class Stripe:
         return bool(self.settings.stripe_secret_key)
 
     async def _post(self, path: str, form: list[tuple[str, str]]) -> dict:
+        # Stripe takes bracketed form keys; encode explicitly (httpx's ``data=`` wants a mapping).
         resp = await self.client.post(
-            f"{self.api}{path}", data=form, auth=(self.settings.stripe_secret_key, "")
+            f"{self.api}{path}",
+            content=urlencode(form),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            auth=(self.settings.stripe_secret_key, ""),
         )
         if resp.status_code >= 400:
             raise StripeError(f"Stripe {path} failed: {resp.status_code} {resp.text[:500]}")
@@ -142,9 +143,7 @@ class Stripe:
     async def ensure_customer(self, org: Organization, email: str) -> str:
         if org.stripe_customer_id:
             return org.stripe_customer_id
-        customer = await self._post(
-            "/customers", [("email", email), ("name", org.name), ("metadata[org_id]", org.id)]
-        )
+        customer = await self._post("/customers", [("email", email), ("name", org.name), ("metadata[org_id]", org.id)])
         org.stripe_customer_id = customer["id"]
         return customer["id"]
 
@@ -233,21 +232,37 @@ async def handle_stripe_event(db: AsyncSession, event: dict) -> str:
             return f"plan:{org.plan}"
         return "ignored"
     if etype == "invoice.paid":
-        sub_meta = ((obj.get("subscription_details") or {}).get("metadata")) or {}
+        # API versions from 2025-03-31 nest this under invoice.parent.subscription_details.
+        details = obj.get("subscription_details") or (obj.get("parent") or {}).get("subscription_details") or {}
+        sub_meta = details.get("metadata") or {}
         org_id = sub_meta.get("org_id") or org_id
         plan = PLANS.get(sub_meta.get("plan", ""))
         if not org_id or plan is None or not plan.monthly_credit_usd:
             return "ignored"
         await adjust_balance(
-            db, org_id, usd_to_micros(plan.monthly_credit_usd), "subscription",
-            f"{plan.label} monthly credit", ref=f"stripe:{event['id']}",
+            db,
+            org_id,
+            usd_to_micros(plan.monthly_credit_usd),
+            "subscription",
+            f"{plan.label} monthly credit",
+            ref=f"stripe:{event['id']}",
         )
         await db.commit()
         return "monthly-credit"
-    if etype == "customer.subscription.deleted":
-        org_id = meta.get("org_id")
+    if etype in ("customer.subscription.deleted", "customer.subscription.updated"):
         org = await db.get(Organization, org_id) if org_id else None
         if org is None:
+            return "ignored"
+        if org.stripe_subscription_id and obj.get("id") and obj["id"] != org.stripe_subscription_id:
+            return "ignored"  # an older subscription of this org
+        if etype == "customer.subscription.updated" and obj.get("status") in ("active", "trialing", "past_due"):
+            plan = meta.get("plan")
+            if plan in PLANS and plan != org.plan:
+                org.plan = plan
+                await db.commit()
+                return f"plan:{plan}"
+            return "ignored"
+        if etype == "customer.subscription.updated" and obj.get("status") not in ("canceled", "unpaid", "incomplete_expired"):
             return "ignored"
         org.plan = "free"
         org.stripe_subscription_id = None

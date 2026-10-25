@@ -35,6 +35,9 @@ class Settings(BaseSettings):
 
     # ---- storage ---------------------------------------------------------
     database_url: str = "sqlite+aiosqlite:///./.data/controlplane.db"
+    # Apply database migrations on start (disable when replicas start concurrently and
+    # run ``python -m controlplane migrate`` as a release step instead).
+    auto_migrate: bool = True
     data_dir: Path = Path("./.data")
     blob_backend: Literal["local", "s3"] = "local"
     s3_bucket: str = ""
@@ -62,8 +65,17 @@ class Settings(BaseSettings):
     local_sandbox_port_range: tuple[int, int] = (17000, 17999)
     allow_insecure_local_sandboxes: bool = False
     # docker driver
-    docker_network: str = "agentsociety-sandboxes"
+    # "network": the control plane runs in a container; every sandbox gets its own
+    #   bridge network that the control plane joins (sandboxes cannot reach each other).
+    # "port": the control plane runs on the host; sandboxes share one bridge network with
+    #   inter-container traffic disabled and publish their agent port on 127.0.0.1.
     docker_access: Literal["network", "port"] = "network"
+    docker_network: str = "agentsociety-sandboxes"  # shared network for "port" access
+    # Control-plane container to attach to sandbox networks ("network" access); defaults
+    # to $HOSTNAME, which Docker sets to the container id.
+    docker_control_plane_container: str = ""
+    # DNS name of the control plane inside sandbox networks (match CP_INTERNAL_BASE_URL).
+    docker_control_plane_alias: str = "controlplane"
     docker_runtime: str = ""  # e.g. "runsc" for gVisor
     # kubernetes driver
     k8s_namespace: str = "agentsociety-sandboxes"
@@ -92,6 +104,9 @@ class Settings(BaseSettings):
     usage_flush_interval_s: float = 2.0
     # Multiplier from provider list price to customer price when seeding the catalog.
     price_multiplier: float = 1.0
+    # Let organisations point their own (BYOK) providers at private/internal addresses.
+    # Off by default: the gateway would otherwise fetch internal URLs on their behalf.
+    allow_private_provider_urls: bool = False
 
     # ---- billing ---------------------------------------------------------
     stripe_secret_key: str = ""
@@ -100,9 +115,7 @@ class Settings(BaseSettings):
     stripe_price_team: str = ""
     signup_credit_usd: float = 5.0
     # Compute pricing in USD per sandbox-hour by size.
-    sandbox_hourly_usd: dict[str, float] = Field(
-        default_factory=lambda: {"small": 0.06, "medium": 0.12, "large": 0.24, "xlarge": 0.48}
-    )
+    sandbox_hourly_usd: dict[str, float] = Field(default_factory=lambda: {"small": 0.06, "medium": 0.12, "large": 0.24, "xlarge": 0.48})
 
     # ---- literature search -----------------------------------------------
     openalex_mailto: str = ""

@@ -185,12 +185,16 @@ class ChatManager:
             argv = [
                 self.settings.claude_bin,
                 "-p",
-                "--output-format", "stream-json",
+                "--output-format",
+                "stream-json",
                 "--verbose",
                 "--include-partial-messages",
-                "--permission-mode", permission_mode,
-                "--model", model,
-                "--append-system-prompt", PLATFORM_PROMPT,
+                "--permission-mode",
+                permission_mode,
+                "--model",
+                model,
+                "--append-system-prompt",
+                PLATFORM_PROMPT,
             ]
             if live.meta.claude_session_id:
                 argv += ["--resume", live.meta.claude_session_id]
@@ -254,8 +258,7 @@ class ChatManager:
                     live.save_meta()
                 if payload.get("type") == "result":
                     live.meta.last_result = {
-                        k: payload.get(k)
-                        for k in ("subtype", "is_error", "duration_ms", "num_turns", "total_cost_usd", "usage", "session_id")
+                        k: payload.get(k) for k in ("subtype", "is_error", "duration_ms", "num_turns", "total_cost_usd", "usage", "session_id")
                     }
                     if payload.get("session_id"):
                         live.meta.claude_session_id = payload["session_id"]

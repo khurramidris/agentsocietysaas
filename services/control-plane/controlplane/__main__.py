@@ -1,7 +1,8 @@
-"""``python -m controlplane``: run the API with uvicorn."""
+"""``python -m controlplane [serve|migrate]``: run the API (default) or apply migrations."""
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 
@@ -9,7 +10,17 @@ import uvicorn
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(prog="controlplane")
+    parser.add_argument("command", nargs="?", default="serve", choices=["serve", "migrate"])
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.command == "migrate":
+        from .migrate import upgrade
+        from .settings import get_settings
+
+        upgrade(get_settings().database_url)
+        logging.getLogger("controlplane").info("database is at the latest revision")
+        return
     uvicorn.run(
         "controlplane.app:create_app",
         factory=True,

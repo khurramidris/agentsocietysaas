@@ -21,7 +21,39 @@ import httpx
 
 _WORD = re.compile(r"[a-z0-9]+")
 STOPWORDS = frozenset(
-    "a an and are as at be by for from has in is it its of on or that the to was were will with how what why when does do".split()
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+        "how",
+        "what",
+        "why",
+        "when",
+        "does",
+        "do",
+    ]
 )
 
 
@@ -56,7 +88,9 @@ def _openalex_abstract(inverted: dict[str, list[int]] | None) -> str:
     return " ".join(positions[i] for i in sorted(positions))
 
 
-async def search_openalex(client: httpx.AsyncClient, query: str, limit: int, year_from: int | None, year_to: int | None, mailto: str = "") -> list[dict[str, Any]]:
+async def search_openalex(
+    client: httpx.AsyncClient, query: str, limit: int, year_from: int | None, year_to: int | None, mailto: str = ""
+) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"search": query, "per_page": min(limit, 50)}
     filters = []
     if year_from:
@@ -106,7 +140,8 @@ async def search_arxiv(client: httpx.AsyncClient, query: str, limit: int, year_f
         params={"search_query": search, "start": 0, "max_results": min(limit, 50), "sortBy": "relevance"},
     )
     resp.raise_for_status()
-    root = ET.fromstring(resp.text)
+    # arXiv over TLS; the bundled expat (>= 2.4) also caps entity expansion.
+    root = ET.fromstring(resp.text)  # noqa: S314
     out = []
     for entry in root.findall("a:entry", _ATOM):
         published = entry.findtext("a:published", default="", namespaces=_ATOM)
@@ -133,7 +168,9 @@ async def search_arxiv(client: httpx.AsyncClient, query: str, limit: int, year_f
     return out
 
 
-async def search_crossref(client: httpx.AsyncClient, query: str, limit: int, year_from: int | None, year_to: int | None, mailto: str = "") -> list[dict[str, Any]]:
+async def search_crossref(
+    client: httpx.AsyncClient, query: str, limit: int, year_from: int | None, year_to: int | None, mailto: str = ""
+) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"query": query, "rows": min(limit, 50)}
     filters = []
     if year_from:

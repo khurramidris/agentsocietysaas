@@ -62,14 +62,9 @@ def user_out(user: User) -> dict:
 
 async def orgs_for(db: AsyncSession, user: User) -> list[dict]:
     rows = (
-        await db.execute(
-            select(Membership, Organization).join(Organization, Membership.org_id == Organization.id).where(Membership.user_id == user.id)
-        )
+        await db.execute(select(Membership, Organization).join(Organization, Membership.org_id == Organization.id).where(Membership.user_id == user.id))
     ).all()
-    return [
-        {"id": org.id, "name": org.name, "slug": org.slug, "plan": org.plan, "role": m.role, "is_personal": org.is_personal}
-        for m, org in rows
-    ]
+    return [{"id": org.id, "name": org.name, "slug": org.slug, "plan": org.plan, "role": m.role, "is_personal": org.is_personal} for m, org in rows]
 
 
 async def _issue_session(request: Request, response: Response, db: AsyncSession, user: User) -> dict:

@@ -67,13 +67,17 @@ def _ide_process(settings: Settings) -> ManagedProcess:
         "code-server",
         [
             settings.code_server_bin,
-            "--bind-addr", f"127.0.0.1:{settings.ide_port}",
-            "--auth", "none",
+            "--bind-addr",
+            f"127.0.0.1:{settings.ide_port}",
+            "--auth",
+            "none",
             "--disable-telemetry",
             "--disable-update-check",
             "--disable-workspace-trust",
-            "--user-data-dir", str(data / "user-data"),
-            "--extensions-dir", str(data / "extensions"),
+            "--user-data-dir",
+            str(data / "user-data"),
+            "--extensions-dir",
+            str(data / "extensions"),
             str(settings.workspace),
         ],
         cwd=settings.workspace,
@@ -116,17 +120,14 @@ def create_app(settings: Settings | None = None, *, run_bootstrap: bool = True) 
     app = FastAPI(title="sandboxd", version=__version__, lifespan=lifespan, docs_url="/docs", openapi_url="/openapi.json")
     app.state.settings = settings
     app.state.activity = Activity()
+    app.state.bootstrap = None
     app.state.backend = None
     app.state.ide = None
     app.state.versions = {"sandboxd": __version__}
     app.state.jobs = tools.JobManager(settings)
     app.state.chat = chat.ChatManager(settings)
-    app.state.backend_client = httpx.AsyncClient(
-        base_url=f"http://127.0.0.1:{settings.backend_port}", timeout=httpx.Timeout(300, connect=5)
-    )
-    app.state.ide_client = httpx.AsyncClient(
-        base_url=f"http://127.0.0.1:{settings.ide_port}", timeout=httpx.Timeout(120, connect=5)
-    )
+    app.state.backend_client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{settings.backend_port}", timeout=httpx.Timeout(300, connect=5))
+    app.state.ide_client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{settings.ide_port}", timeout=httpx.Timeout(120, connect=5))
 
     for module in (files, experiments, tools, workspace, chat, as2, ide):
         app.include_router(module.router)

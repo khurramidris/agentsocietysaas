@@ -109,9 +109,7 @@ async def org_access(db: AsyncSession, principal: Principal, org_id: str, min_ro
         if principal.api_key.org_id == org_id:
             role = principal.api_key.role
     elif principal.user is not None:
-        membership = (
-            await db.execute(select(Membership).where(Membership.org_id == org_id, Membership.user_id == principal.user.id))
-        ).scalar_one_or_none()
+        membership = (await db.execute(select(Membership).where(Membership.org_id == org_id, Membership.user_id == principal.user.id))).scalar_one_or_none()
         if membership is not None:
             role = membership.role
         elif principal.is_platform_admin:

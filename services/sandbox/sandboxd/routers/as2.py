@@ -49,7 +49,7 @@ def _pin_body(body: bytes, content_type: str, workspace: str) -> bytes:
     return body
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
 async def proxy(request: Request, path: str):
     settings = request.app.state.settings
     if not settings.enable_backend:

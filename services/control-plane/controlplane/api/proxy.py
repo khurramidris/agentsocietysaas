@@ -34,8 +34,16 @@ router = APIRouter(tags=["sandbox-proxy"])
 
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 HOP_BY_HOP = {
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
-    "transfer-encoding", "upgrade", "host", "content-length",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "host",
+    "content-length",
 }
 FORWARD_REQUEST_HEADERS = {"content-type", "accept", "accept-encoding", "last-event-id", "range", "if-none-match", "if-modified-since"}
 STREAM_TIMEOUT = httpx.Timeout(None, connect=10)
@@ -68,7 +76,9 @@ async def forward(request: Request, project: Project, path: str, *, extra_query:
     return StreamingResponse(resp.aiter_raw(), status_code=resp.status_code, headers=out, background=BackgroundTask(resp.aclose))
 
 
-@router.api_route("/api/v1/projects/{project_id}/sbx/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+# Pass-through routes stay out of the OpenAPI schema: the sandbox API documents itself at
+# /api/v1/projects/{id}/sbx/openapi.json.
+@router.api_route("/api/v1/projects/{project_id}/sbx/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
 async def sandbox_proxy(project_id: str, path: str, request: Request, principal: Principal = Depends(get_principal), db=Depends(get_db)):
     min_role = "viewer" if request.method in READ_METHODS else "member"
     pa = await project_access(db, principal, project_id, min_role)
@@ -141,7 +151,7 @@ def _cookie_name(project_id: str) -> str:
     return f"ide_{project_id}"
 
 
-@router.api_route("/ide/{project_id}/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+@router.api_route("/ide/{project_id}/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], include_in_schema=False)
 async def ide_http(project_id: str, path: str, request: Request):
     settings = ctx(request).settings
     ticket = request.query_params.get("ticket")
@@ -154,8 +164,13 @@ async def ide_http(project_id: str, path: str, request: Request):
         target = f"/ide/{project_id}/{path}" + (f"?{urlencode(query)}" if query else "")
         resp = RedirectResponse(target, status_code=303)
         resp.set_cookie(
-            _cookie_name(project_id), session, max_age=IDE_SESSION_TTL_S, httponly=True,
-            secure=settings.effective_ide_base_url.startswith("https://"), samesite="lax", path=f"/ide/{project_id}/",
+            _cookie_name(project_id),
+            session,
+            max_age=IDE_SESSION_TTL_S,
+            httponly=True,
+            secure=settings.effective_ide_base_url.startswith("https://"),
+            samesite="lax",
+            path=f"/ide/{project_id}/",
         )
         return resp
     session = request.cookies.get(_cookie_name(project_id), "")
@@ -170,8 +185,12 @@ async def ide_http(project_id: str, path: str, request: Request):
     headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP | {"cookie", "authorization", "origin"}}
     headers["Authorization"] = f"Bearer {secret}"
     upstream = client.build_request(
-        request.method, f"{endpoint}/ide/{path}", params=list(request.query_params.multi_items()),
-        content=request.stream() if request.method not in READ_METHODS else None, headers=headers, timeout=STREAM_TIMEOUT,
+        request.method,
+        f"{endpoint}/ide/{path}",
+        params=list(request.query_params.multi_items()),
+        content=request.stream() if request.method not in READ_METHODS else None,
+        headers=headers,
+        timeout=STREAM_TIMEOUT,
     )
     try:
         resp = await client.send(upstream, stream=True)

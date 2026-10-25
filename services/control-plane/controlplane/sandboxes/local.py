@@ -96,7 +96,7 @@ class LocalProcessDriver(SandboxDriver):
             (base / "workspace").mkdir(parents=True, exist_ok=True)
             log = open(base / "sandboxd.log", "ab")  # noqa: SIM115 - owned by the child
             try:
-                proc = subprocess.Popen(  # noqa: S603
+                proc = subprocess.Popen(  # noqa: ASYNC220 - spawning returns immediately
                     [python, "-m", "sandboxd"],
                     env=env,
                     cwd=str(base),
@@ -170,11 +170,7 @@ _DROP_PREFIXES = ("CP_", "CLAUDE", "ANTHROPIC_", "CCR_", "OPENAI_")
 
 def _inheritable_env() -> dict[str, str]:
     """The control plane's environment minus its own configuration, LLM tool config and secrets."""
-    return {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(_DROP_PREFIXES) and not any(marker in k.upper() for marker in _SECRET_MARKERS)
-    }
+    return {k: v for k, v in os.environ.items() if not k.startswith(_DROP_PREFIXES) and not any(marker in k.upper() for marker in _SECRET_MARKERS)}
 
 
 def _read_pid(path: Path) -> int | None:
