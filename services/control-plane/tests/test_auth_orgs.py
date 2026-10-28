@@ -63,8 +63,14 @@ async def test_login_refresh_rotation_and_logout(cp):
 
 async def test_login_is_rate_limited(cp):
     await cp.signup("eve@example.com")
+    # Successful sign-ins do not count; failures do, and a success resets them.
+    assert {(await cp.login("eve@example.com")).status_code for _ in range(12)} == {200}
+    for _ in range(9):
+        await cp.login("eve@example.com", "nope-nope")
+    assert (await cp.login("eve@example.com")).status_code == 200
     codes = [(await cp.login("eve@example.com", "nope-nope")).status_code for _ in range(11)]
     assert codes[:10] == [401] * 10 and codes[10] == 429
+    assert (await cp.login("eve@example.com")).status_code == 429
 
 
 async def test_password_change_requires_current_password(cp):

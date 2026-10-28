@@ -141,6 +141,14 @@ def test_workspace_settings_and_info(client):
     assert client.put("/workspace/user-env", headers=AUTH, json={"values": {"AGENTSOCIETY_LLM_API_KEY": "x"}}).status_code == 400
     env_text = (client.settings.workspace / ".env").read_text()
     assert 'MY_KEY="va\\"l"' in env_text and env_text.count("AGENTSOCIETY_LLM_API_KEY=") == 1
+    # Updates merge into the user section: other keys stay, unset removes.
+    r = client.put("/workspace/user-env", headers=AUTH, json={"values": {"OTHER": "1"}})
+    assert r.json()["keys"] == ["MY_KEY", "OTHER"]
+    r = client.put("/workspace/user-env", headers=AUTH, json={"values": {"OTHER": "2"}, "unset": ["MY_KEY"]})
+    assert r.json()["keys"] == ["OTHER"]
+    env_text = (client.settings.workspace / ".env").read_text()
+    assert "OTHER=2" in env_text and "MY_KEY" not in env_text and "AGENTSOCIETY_LLM_MODEL=deepseek-v4-flash" in env_text
+    assert client.get("/workspace/settings", headers=AUTH).json()["user_env_keys"] == ["OTHER"]
 
 
 def test_workspace_import_is_safe(client):
@@ -232,3 +240,19 @@ def test_upstream_backend_through_proxy(make_settings):
         assert custom.status_code == 200 and json.loads(custom.text)["success"], custom.text
         status = c.get("/status", headers=AUTH).json()
         assert status["backend"]["running"]
+
+
+def test_literature_library_ops(client):
+    paper = "# Echo chambers in recommender systems\n\nWe study how engagement ranking narrows exposure.\n"
+    client.put("/files/content", headers=AUTH, json={"path": "papers/echo.md", "content": paper})
+    r = client.post("/literature/library", headers=AUTH, json={"op": "add-file", "file": "papers/echo.md", "title": "Echo chambers in recommender systems"})
+    assert r.status_code == 200, r.text
+    assert r.json()["ok"] is True, r.json()
+    index = json.loads((client.settings.workspace / "papers" / "literature_index.json").read_text())
+    assert any(e["title"] == "Echo chambers in recommender systems" and e["source"] == "user_upload" for e in index["entries"])
+    r = client.post("/literature/library", headers=AUTH, json={"op": "export-bib", "stdout_only": True})
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+    # Only the extension's operations, and only files inside the workspace.
+    assert client.post("/literature/library", headers=AUTH, json={"op": "rm"}).status_code == 422
+    assert client.post("/literature/library", headers=AUTH, json={"op": "add-file", "file": "../../etc/passwd"}).status_code in (400, 403)
+    assert client.post("/literature/library", headers=AUTH, json={"op": "add-id"}).status_code == 400

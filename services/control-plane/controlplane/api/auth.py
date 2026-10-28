@@ -28,13 +28,22 @@ MAX_ATTEMPTS = 10
 WINDOW_S = 300
 
 
-def _rate_limit(key: str) -> None:
+def _check_rate(key: str) -> None:
+    """Refuse once ``key`` has used up its attempts in the current window."""
     now = time.time()
-    hits = [t for t in _attempts[key] if now - t < WINDOW_S]
-    _attempts[key] = hits
+    hits = [t for t in _attempts.get(key, ()) if now - t < WINDOW_S]
+    if hits:
+        _attempts[key] = hits
+    else:
+        _attempts.pop(key, None)
     if len(hits) >= MAX_ATTEMPTS:
         raise HTTPException(429, "Too many attempts; try again in a few minutes")
-    hits.append(now)
+
+
+def _rate_limit(key: str) -> None:
+    """Count an attempt against ``key``."""
+    _check_rate(key)
+    _attempts[key].append(time.time())
 
 
 def slugify(name: str) -> str:
@@ -141,10 +150,13 @@ class LoginBody(BaseModel):
 @router.post("/login")
 async def login(body: LoginBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.lower()
-    _rate_limit(f"login:{client_ip(request)}:{email}")
+    key = f"login:{client_ip(request)}:{email}"
+    _check_rate(key)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is None or not user.is_active or not verify_password(user.password_hash, body.password):
+        _attempts[key].append(time.time())  # only failures count towards the limit
         raise HTTPException(401, "Invalid email or password")
+    _attempts.pop(key, None)
     audit(db, request, "user.login", user_id=user.id, target_type="user", target_id=user.id)
     return await _issue_session(request, response, db, user)
 

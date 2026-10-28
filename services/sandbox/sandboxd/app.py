@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from . import __version__
 from .bootstrap import bootstrap
 from .config import Settings
-from .routers import as2, chat, experiments, files, ide, tools, workspace
+from .routers import as2, chat, experiments, files, ide, literature, tools, workspace
 from .security import AgentAuth
 from .supervisor import ManagedProcess
 from .workspace_env import child_env
@@ -129,7 +129,7 @@ def create_app(settings: Settings | None = None, *, run_bootstrap: bool = True) 
     app.state.backend_client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{settings.backend_port}", timeout=httpx.Timeout(300, connect=5))
     app.state.ide_client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{settings.ide_port}", timeout=httpx.Timeout(120, connect=5))
 
-    for module in (files, experiments, tools, workspace, chat, as2, ide):
+    for module in (files, experiments, tools, workspace, chat, literature, as2, ide):
         app.include_router(module.router)
 
     @app.get("/health")

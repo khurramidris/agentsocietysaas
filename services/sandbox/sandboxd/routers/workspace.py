@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ..bootstrap import bootstrap, read_marker, read_overrides, refresh_module_info, write_overrides
 from ..security import AgentAuth
-from ..workspace_env import managed_values, quote_env_value, read_user_env, write_workspace_env
+from ..workspace_env import managed_values, quote_env_value, read_user_env, split_user_lines, write_workspace_env
 
 router = APIRouter(prefix="/workspace", tags=["workspace"], dependencies=[AgentAuth])
 
@@ -164,23 +164,36 @@ async def put_settings(request: Request, body: SettingsBody):
 
 
 class UserEnvBody(BaseModel):
-    values: dict[str, str]
+    values: dict[str, str] = Field(default_factory=dict, description="Variables to add or replace")
+    unset: list[str] = Field(default_factory=list, description="Variables to remove")
 
 
 @router.put("/user-env")
 async def put_user_env(request: Request, body: UserEnvBody):
-    """Replace the user section of ``.env`` (variables outside the managed block)."""
+    """Add, replace or remove variables in the user section of ``.env`` (outside the managed block).
+
+    Values are never returned (they may be the user's own secrets), so updates
+    are merged into the existing section; comments and order are kept.
+    """
     settings = _settings(request)
     managed = set(managed_values(settings)) | OVERRIDABLE_KEYS
     for key in body.values:
         if not _KEY_RE.fullmatch(key) or key in managed:
             raise HTTPException(400, f"Invalid or platform-managed key: {key}")
     env_path = settings.workspace / ".env"
-    lines = [f"{k}={quote_env_value(v)}" for k, v in sorted(body.values.items())]
-    # Rewrite: managed block first, then exactly the user's variables.
+    pending = dict(body.values)
+    removed = set(body.unset)
+    lines: list[str] = []
+    for line in split_user_lines(env_path.read_text(encoding="utf-8")) if env_path.exists() else []:
+        key = line.split("=", 1)[0].strip().removeprefix("export ").strip()
+        if key in removed:
+            continue
+        lines.append(f"{key}={quote_env_value(pending.pop(key))}" if key in pending else line)
+    lines += [f"{k}={quote_env_value(v)}" for k, v in sorted(pending.items())]
+    # Write the user lines, then re-render the managed block in front of them.
     env_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     write_workspace_env(settings, read_overrides(settings))
-    return {"keys": sorted(body.values)}
+    return {"keys": sorted(read_user_env(settings))}
 
 
 def _safe_members(zf: zipfile.ZipFile, dest: Path):
