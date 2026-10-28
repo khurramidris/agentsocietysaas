@@ -1,0 +1,291 @@
+Internationalise the experiment init-config editor (InitConfigApp).
+
+Upstream's init_config.json visual editor is the only extension webview with
+hard-coded Chinese labels; route them through the webviews' existing i18next
+setup and add matching en-US and zh-CN strings. Applied by the web build
+(services/web/upstream-patches.ts); suitable for contributing upstream.
+
+diff -ru a/extension/src/webview/i18n/locales/en-US.json b/extension/src/webview/i18n/locales/en-US.json
+--- a/extension/src/webview/i18n/locales/en-US.json	2026-10-28 19:25:41.470209766 +0000
++++ b/extension/src/webview/i18n/locales/en-US.json	2026-10-28 19:25:41.534272037 +0000
+@@ -1354,5 +1354,41 @@
+     "advancedSectionNetwork": "Outbound network",
+     "advancedSectionNetworkHint": "Used for gateway upstream calls and injected into Codex terminals reopened from this page, including sign-in. Existing or other terminals need their own proxy settings; localhost always bypasses it.",
+     "usageEnableRouteHint": "Turn on Claude or Codex proxy above to see usage stats."
++  },
++  "initConfig": {
++    "add": "Add",
++    "loading": "Loading configuration...",
++    "title": "Experiment setup",
++    "subtitle": "Environment modules and agents for this experiment",
++    "reset": "Reset",
++    "save": "Save configuration",
++    "stats": {
++      "envModules": "Environment modules",
++      "agents": "Agents",
++      "status": "Configuration",
++      "complete": "Complete",
++      "incomplete": "Incomplete"
++    },
++    "saved": "Configuration saved",
++    "envSection": "Environment modules",
++    "envEmpty": "No environment modules configured",
++    "paramCount": "{{count}} parameters",
++    "paramCount_one": "{{count}} parameter",
++    "paramCount_other": "{{count}} parameters",
++    "deleteModuleConfirm": "Delete this module?",
++    "ok": "OK",
++    "cancel": "Cancel",
++    "moduleType": "Module type: {{type}}",
++    "paramsTitle": "Parameters",
++    "agentSection": "Agents",
++    "agentEmpty": "No agents configured",
++    "kwargsTitle": "Keyword arguments",
++    "columns": {
++      "type": "Type",
++      "name": "Name",
++      "role": "Role",
++      "actions": "Actions"
++    },
++    "deleteAgentConfirm": "Delete this agent?"
+   }
+ }
+diff -ru a/extension/src/webview/i18n/locales/zh-CN.json b/extension/src/webview/i18n/locales/zh-CN.json
+--- a/extension/src/webview/i18n/locales/zh-CN.json	2026-10-28 19:25:41.490092056 +0000
++++ b/extension/src/webview/i18n/locales/zh-CN.json	2026-10-28 19:25:41.536429275 +0000
+@@ -1354,5 +1354,40 @@
+     "advancedSectionNetwork": "出站网络",
+     "advancedSectionNetworkHint": "供本地网关访问上游，也会注入从本页“重启 Codex”新开的终端（包括其中的官方登录）。已有或其他终端需自行配置；localhost 始终直连。",
+     "usageEnableRouteHint": "开启上方 Claude 或 Codex 代理后，这里会显示用量统计。"
++  },
++  "initConfig": {
++    "add": "添加",
++    "loading": "加载配置中...",
++    "title": "实验初始化配置",
++    "subtitle": "配置实验的环境模块和 Agent 参数",
++    "reset": "重置",
++    "save": "保存配置",
++    "stats": {
++      "envModules": "环境模块",
++      "agents": "Agent 数量",
++      "status": "配置状态",
++      "complete": "完整",
++      "incomplete": "不完整"
++    },
++    "saved": "配置已保存",
++    "envSection": "环境模块配置",
++    "envEmpty": "暂无环境模块配置",
++    "paramCount": "{{count}} 个参数",
++    "paramCount_other": "{{count}} 个参数",
++    "deleteModuleConfirm": "确定删除此模块？",
++    "ok": "确定",
++    "cancel": "取消",
++    "moduleType": "模块类型: {{type}}",
++    "paramsTitle": "参数配置",
++    "agentSection": "Agent 配置",
++    "agentEmpty": "暂无 Agent 配置",
++    "kwargsTitle": "Kwargs 参数",
++    "columns": {
++      "type": "类型",
++      "name": "名称",
++      "role": "角色",
++      "actions": "操作"
++    },
++    "deleteAgentConfirm": "确定删除此 Agent？"
+   }
+ }
+diff -ru a/extension/src/webview/initConfig/InitConfigApp.tsx b/extension/src/webview/initConfig/InitConfigApp.tsx
+--- a/extension/src/webview/initConfig/InitConfigApp.tsx	2026-10-28 19:25:41.459569732 +0000
++++ b/extension/src/webview/initConfig/InitConfigApp.tsx	2026-10-28 19:25:41.532486732 +0000
+@@ -1,4 +1,5 @@
+ import * as React from 'react';
++import { useTranslation } from 'react-i18next';
+ import {
+   ConfigProvider,
+   Card,
+@@ -47,6 +48,7 @@
+   depth?: number;
+   palette: any;
+ }> = ({ value, onChange, depth = 0, palette }) => {
++  const { t } = useTranslation();
+   if (value === null || value === undefined) {
+     return <Text type="secondary">null</Text>;
+   }
+@@ -128,7 +130,7 @@
+           icon={<PlusOutlined />}
+           onClick={() => onChange([...value, ''])}
+         >
+-          添加
++          {t('initConfig.add')}
+         </Button>
+       </div>
+     );
+@@ -165,6 +167,7 @@
+ 
+ export const InitConfigApp: React.FC<InitConfigAppProps> = ({ vscode, initialConfig }) => {
+   const { palette, themeConfig } = useVscodeTheme();
++  const { t } = useTranslation();
+   const [config, setConfig] = React.useState<InitConfig>(initialConfig || {});
+   const [loading, setLoading] = React.useState<boolean>(true);
+   const [saved, setSaved] = React.useState<boolean>(false);
+@@ -274,7 +277,7 @@
+         <Layout style={{ minHeight: '100vh', background: 'transparent' }}>
+           <Content style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', gap: 16 }}>
+             <Spin size="large" />
+-            <Text>加载配置中...</Text>
++            <Text>{t('initConfig.loading')}</Text>
+           </Content>
+         </Layout>
+       </ConfigProvider>
+@@ -318,31 +321,31 @@
+                     <SettingOutlined style={{ fontSize: 20 }} />
+                   </span>
+                   <div>
+-                    <Title level={4} style={{ margin: 0 }}>实验初始化配置</Title>
+-                    <Text type="secondary" style={{ fontSize: 12 }}>配置实验的环境模块和 Agent 参数</Text>
++                    <Title level={4} style={{ margin: 0 }}>{t('initConfig.title')}</Title>
++                    <Text type="secondary" style={{ fontSize: 12 }}>{t('initConfig.subtitle')}</Text>
+                   </div>
+                 </div>
+                 <Space>
+                   <Button onClick={() => setConfig(initialConfig || {})}>
+-                    重置
++                    {t('initConfig.reset')}
+                   </Button>
+                   <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
+-                    保存配置
++                    {t('initConfig.save')}
+                   </Button>
+                 </Space>
+               </div>
+ 
+               {/* 统计卡片 */}
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+-                {statPill('环境模块', envModules.length, <EnvironmentOutlined />, palette.linkForeground)}
+-                {statPill('Agent 数量', agents.length, <UserOutlined />, palette.successForeground)}
+-                {statPill('配置状态', isComplete ? '完整' : '不完整', isComplete ? <CheckCircleOutlined /> : <CloseCircleOutlined />, isComplete ? palette.successForeground : palette.warningForeground)}
++                {statPill(t('initConfig.stats.envModules'), envModules.length, <EnvironmentOutlined />, palette.linkForeground)}
++                {statPill(t('initConfig.stats.agents'), agents.length, <UserOutlined />, palette.successForeground)}
++                {statPill(t('initConfig.stats.status'), isComplete ? t('initConfig.stats.complete') : t('initConfig.stats.incomplete'), isComplete ? <CheckCircleOutlined /> : <CloseCircleOutlined />, isComplete ? palette.successForeground : palette.warningForeground)}
+               </div>
+             </div>
+ 
+             {saved && (
+               <Alert
+-                message="配置已保存"
++                message={t('initConfig.saved')}
+                 type="success"
+                 showIcon
+                 closable
+@@ -363,11 +366,11 @@
+             >
+               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                 <EnvironmentOutlined style={{ color: palette.linkForeground }} />
+-                <Text strong style={{ fontSize: 14 }}>环境模块配置</Text>
++                <Text strong style={{ fontSize: 14 }}>{t('initConfig.envSection')}</Text>
+                 <Tag color="blue" style={{ marginLeft: 'auto' }}>{envModules.length}</Tag>
+               </div>
+               {envModules.length === 0 ? (
+-                <Empty description="暂无环境模块配置" style={{ padding: 20 }} />
++                <Empty description={t('initConfig.envEmpty')} style={{ padding: 20 }} />
+               ) : (
+                 <Collapse accordion style={{ background: 'transparent' }}>
+                   {envModules.map((module, index) => (
+@@ -376,17 +379,17 @@
+                         <Space>
+                           <Tag color="green" style={{ margin: 0 }}>{module.module_type}</Tag>
+                           <Text type="secondary" style={{ fontSize: 12 }}>
+-                            {Object.keys(module.kwargs || {}).length} 个参数
++                            {t('initConfig.paramCount', { count: Object.keys(module.kwargs || {}).length })}
+                           </Text>
+                         </Space>
+                       }
+                       key={index}
+                       extra={
+                         <Popconfirm
+-                          title="确定删除此模块？"
++                          title={t('initConfig.deleteModuleConfirm')}
+                           onConfirm={() => deleteEnvModule(index)}
+-                          okText="确定"
+-                          cancelText="取消"
++                          okText={t('initConfig.ok')}
++                          cancelText={t('initConfig.cancel')}
+                         >
+                           <Button
+                             size="small"
+@@ -399,11 +402,11 @@
+                     >
+                       <div style={{ padding: '12px 0' }}>
+                         <Text strong style={{ display: 'block', marginBottom: 12 }}>
+-                          模块类型: {module.module_type}
++                          {t('initConfig.moduleType', { type: module.module_type })}
+                         </Text>
+                         <Card
+                           size="small"
+-                          title="参数配置"
++                          title={t('initConfig.paramsTitle')}
+                           style={{
+                             borderRadius: 8,
+                             background: palette.editorBackground,
+@@ -436,11 +439,11 @@
+             >
+               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                 <UserOutlined style={{ color: palette.successForeground }} />
+-                <Text strong style={{ fontSize: 14 }}>Agent 配置</Text>
++                <Text strong style={{ fontSize: 14 }}>{t('initConfig.agentSection')}</Text>
+                 <Tag color="green" style={{ marginLeft: 'auto' }}>{agents.length}</Tag>
+               </div>
+               {agents.length === 0 ? (
+-                <Empty description="暂无 Agent 配置" style={{ padding: 20 }} />
++                <Empty description={t('initConfig.agentEmpty')} style={{ padding: 20 }} />
+               ) : (
+                 <Table
+                   dataSource={agents.map((agent, index) => ({ ...agent, _index: index }))}
+@@ -452,7 +455,7 @@
+                       <div style={{ padding: 12 }}>
+                         <Card
+                           size="small"
+-                          title="Kwargs 参数"
++                          title={t('initConfig.kwargsTitle')}
+                           style={{
+                             marginBottom: 12,
+                             borderRadius: 8,
+@@ -497,31 +500,31 @@
+                       width: 60,
+                     },
+                     {
+-                      title: '类型',
++                      title: t('initConfig.columns.type'),
+                       dataIndex: 'agent_type',
+                       width: 180,
+                       render: (text) => <Tag color="blue" style={{ margin: 0 }}>{text}</Tag>,
+                     },
+                     {
+-                      title: '名称',
++                      title: t('initConfig.columns.name'),
+                       dataIndex: ['kwargs', 'name'],
+                       ellipsis: true,
+                     },
+                     {
+-                      title: '角色',
++                      title: t('initConfig.columns.role'),
+                       dataIndex: ['kwargs', 'role'],
+                       width: 100,
+                       render: (text) => text && <Tag style={{ margin: 0 }}>{text}</Tag>,
+                     },
+                     {
+-                      title: '操作',
++                      title: t('initConfig.columns.actions'),
+                       width: 80,
+                       render: (_, record) => (
+                         <Popconfirm
+-                          title="确定删除此 Agent？"
++                          title={t('initConfig.deleteAgentConfirm')}
+                           onConfirm={() => deleteAgent(record._index)}
+-                          okText="确定"
+-                          cancelText="取消"
++                          okText={t('initConfig.ok')}
++                          cancelText={t('initConfig.cancel')}
+                         >
+                           <Button size="small" danger icon={<DeleteOutlined />} />
+                         </Popconfirm>
