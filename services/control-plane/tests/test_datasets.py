@@ -193,6 +193,12 @@ async def test_sandboxes_publish_into_their_org(cp):
     # Visible to the org's members in the web app.
     mine = (await cp.client.get("/api/user/data/datasets", headers=alice.h)).json()["datasets"]
     assert [d["id"] for d in mine] == ["survey-2026"]
+    # The web app lists one organization at a time.
+    lab = (await cp.client.post("/api/v1/orgs", json={"name": "Lab"}, headers=alice.h)).json()
+    scoped = await cp.client.get("/api/user/data/datasets", params={"org_id": lab["id"]}, headers=alice.h)
+    assert scoped.json()["datasets"] == []
+    scoped = await cp.client.get("/api/user/data/datasets", params={"org_id": alice.org_id}, headers=alice.h)
+    assert [d["id"] for d in scoped.json()["datasets"]] == ["survey-2026"]
 
 
 # --------------------------------------------------- the upstream skill CLIs

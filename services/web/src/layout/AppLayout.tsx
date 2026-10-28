@@ -16,7 +16,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Dropdown, Form, Input, Layout, Menu, Modal, Select, Tag, Typography } from "antd";
 import * as React from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "@/api/client";
 import type { Org } from "@/api/types";
@@ -84,11 +84,22 @@ function OrgSwitcher() {
 }
 
 export function AppLayout() {
-  const { user, logout, org } = useAuth();
+  const { user, logout, org, orgs, setOrg } = useAuth();
   const { data: meta } = useMeta();
   const { data: orgDetail } = useCurrentOrg();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params, setParams] = useSearchParams();
+
+  // Links into a specific organization (e.g. returning from Stripe Checkout) carry ?org=<id>.
+  const linkedOrg = params.get("org");
+  React.useEffect(() => {
+    if (!linkedOrg || !orgs.some((o) => o.id === linkedOrg)) return;
+    if (linkedOrg !== org?.id) setOrg(linkedOrg);
+    const next = new URLSearchParams(params);
+    next.delete("org");
+    setParams(next, { replace: true });
+  }, [linkedOrg, orgs, org?.id, setOrg, params, setParams]);
 
   const items = [
     { key: "/", icon: <AppstoreOutlined />, label: "Projects" },

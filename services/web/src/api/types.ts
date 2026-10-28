@@ -150,7 +150,16 @@ export interface BillingOverview {
 export interface UsageReport {
   days: number;
   by_day: { date: string; cost_usd: number; requests: number }[];
-  by_model: { kind: string; model: string; requests: number; input_tokens: number; output_tokens: number; cached_tokens: number; cost_usd: number }[];
+  by_model: {
+    kind: string;
+    model: string;
+    requests: number;
+    input_tokens: number;
+    output_tokens: number;
+    cached_tokens: number;
+    seconds: number;
+    cost_usd: number;
+  }[];
   by_project: { project_id: string | null; project_name: string; cost_usd: number; requests: number }[];
 }
 
@@ -208,6 +217,73 @@ export interface Dataset {
   created_at: string | null;
   updated_at: string | null;
   published_at: string | null;
+  review_note?: string | null;
+}
+
+export interface DatasetFile {
+  path: string;
+  size_bytes: number;
+}
+
+export interface SearchHit {
+  title: string;
+  abstract?: string;
+  journal?: string;
+  doi?: string;
+  url?: string;
+  year?: number | null;
+  authors?: string[];
+  source: string;
+  source_name?: string;
+  score?: number;
+  pdf_url?: string | null;
+}
+
+export type SearchSources = Record<string, { ok: boolean; count?: number; error?: string }>;
+
+export interface LiteratureDoc {
+  id: number;
+  title: string;
+  doi: string;
+  url: string;
+  year: number | null;
+  authors: string[];
+  characters: number;
+  excerpt: string;
+  created_at: string;
+  text?: string;
+}
+
+export interface AdminStats {
+  users: number;
+  orgs: number;
+  projects: number;
+  running_sandboxes: number;
+  usage_24h_usd: number;
+  requests_24h: number;
+  datasets_pending_review: number;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  is_active: boolean;
+  is_platform_admin: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface AuditEvent {
+  id: number;
+  org_id: string | null;
+  user_id: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
+  ip: string | null;
+  created_at: string;
 }
 
 // ------------------------------------------------------------------ sandboxd

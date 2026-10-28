@@ -194,7 +194,17 @@ async def invite(org_id: str, body: InviteBody, request: Request, principal: Pri
         expires_at=utcnow() + timedelta(days=7),
     )
     db.add(inv)
-    audit(db, request, "org.member_invited", org_id=org_id, user_id=principal.user_id, target_type="invitation", email=body.email.lower(), role=body.role)
+    audit(
+        db,
+        request,
+        "org.member_invited",
+        org_id=org_id,
+        user_id=principal.user_id,
+        target_type="invitation",
+        target_id=inv.id,
+        email=body.email.lower(),
+        role=body.role,
+    )
     await db.commit()
     link = f"{ctx(request).settings.public_base_url}/invite/{raw}"
     # Email delivery is pluggable; the link is returned so admins can share it directly.

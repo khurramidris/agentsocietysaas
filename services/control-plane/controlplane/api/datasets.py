@@ -94,6 +94,8 @@ def _public(ds: Dataset) -> dict[str, Any]:
         "created_at": ds.created_at.isoformat() if ds.created_at else None,
         "updated_at": ds.updated_at.isoformat() if ds.updated_at else None,
         "published_at": ds.published_at.isoformat() if ds.published_at else None,
+        # Only rejected datasets carry a note, and those are visible to their organization only.
+        "review_note": ds.review_note if ds.status == "rejected" else None,
     }
 
 
@@ -224,7 +226,10 @@ async def create_dataset(body: CreateDataset, request: Request, db: AsyncSession
 async def my_datasets(request: Request, db: AsyncSession = Depends(get_db)):
     who = await identity(request, db)
     _require_author(who)
-    rows = (await db.execute(select(Dataset).where(Dataset.org_id.in_(who.org_ids)).order_by(Dataset.updated_at.desc()))).scalars().all()
+    # The web app scopes the list to the organization it shows; the skills list every org's.
+    requested = request.headers.get("x-org-id") or request.query_params.get("org_id")
+    scope = [requested] if requested in who.org_ids else who.org_ids
+    rows = (await db.execute(select(Dataset).where(Dataset.org_id.in_(scope)).order_by(Dataset.updated_at.desc()))).scalars().all()
     return {"datasets": [_public(r) for r in rows]}
 
 

@@ -3,7 +3,6 @@ import {
   ExportOutlined,
   FileSearchOutlined,
   ImportOutlined,
-  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -16,8 +15,8 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, ApiError, downloadFile, request, sbx } from "@/api/client";
-import type { ToolJob } from "@/api/types";
-import { useAuth } from "@/auth";
+import type { SearchHit, SearchSources, ToolJob } from "@/api/types";
+import { PaperHit, SourceTags } from "@/components/PaperHit";
 import { dateTime } from "@/lib/format";
 
 import { SandboxGate, useProjectCtx } from "./context";
@@ -33,20 +32,6 @@ interface Entry {
   query?: string | null;
   saved_at: string;
   extra_fields?: Record<string, unknown> | null;
-}
-
-interface SearchHit {
-  title: string;
-  abstract?: string;
-  journal?: string;
-  doi?: string;
-  url?: string;
-  year?: number | null;
-  authors?: string[];
-  source: string;
-  source_name?: string;
-  score?: number;
-  pdf_url?: string | null;
 }
 
 const INDEX = "papers/literature_index.json";
@@ -84,11 +69,11 @@ async function waitForJob(projectId: string, job: ToolJob, onUpdate: (j: ToolJob
 
 function SearchDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { project } = useProjectCtx();
-  const { org } = useAuth();
+  const { message } = App.useApp();
   const op = useLibraryOp();
   const queryClient = useQueryClient();
   const [hits, setHits] = React.useState<SearchHit[] | null>(null);
-  const [sources, setSources] = React.useState<Record<string, { ok: boolean; count?: number; error?: string }>>({});
+  const [sources, setSources] = React.useState<SearchSources>({});
   const [busy, setBusy] = React.useState(false);
   const [job, setJob] = React.useState<ToolJob | null>(null);
   const [added, setAdded] = React.useState<Set<string>>(new Set());
@@ -96,9 +81,14 @@ function SearchDrawer({ open, onClose }: { open: boolean; onClose: () => void })
   const quick = async (values: { query: string; limit?: number; year_from?: number; year_to?: number }) => {
     setBusy(true);
     try {
-      const r = await api.post<{ results: SearchHit[]; sources: typeof sources }>(`/api/v1/orgs/${org!.id}/literature/search`, { ...values, limit: values.limit ?? 15 });
+      const r = await api.post<{ results: SearchHit[]; sources: SearchSources }>(`/api/v1/orgs/${project.org_id}/literature/search`, {
+        ...values,
+        limit: values.limit ?? 15,
+      });
       setHits(r.results);
       setSources(r.sources);
+    } catch (e) {
+      message.error(e instanceof ApiError ? e.message : "Search failed");
     } finally {
       setBusy(false);
     }
@@ -149,57 +139,25 @@ function SearchDrawer({ open, onClose }: { open: boolean; onClose: () => void })
                     Search
                   </Button>
                 </Form>
-                {Object.keys(sources).length > 0 && (
-                  <Space wrap style={{ marginTop: 12 }}>
-                    {Object.entries(sources).map(([name, s]) => (
-                      <Tooltip key={name} title={s.error}>
-                        <Tag color={s.ok ? "green" : "red"}>
-                          {name}: {s.ok ? s.count : "unavailable"}
-                        </Tag>
-                      </Tooltip>
-                    ))}
-                  </Space>
-                )}
+                <SourceTags sources={sources} />
                 {hits && (
                   <Flex vertical gap={8} style={{ marginTop: 12 }}>
                     {hits.length === 0 && <Empty description="No results" />}
                     {hits.map((hit, i) => {
                       const id = hit.doi || hit.url || `${i}`;
                       return (
-                        <Card key={id} size="small">
-                          <Flex justify="space-between" gap={12}>
-                            <div style={{ minWidth: 0 }}>
-                              <Typography.Text strong>{hit.title}</Typography.Text>
-                              <div>
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {[hit.authors?.slice(0, 4).join(", "), hit.journal, hit.year].filter(Boolean).join(" · ")}
-                                </Typography.Text>
-                              </div>
-                              {hit.abstract && (
-                                <Typography.Paragraph type="secondary" ellipsis={{ rows: 2, expandable: true }} style={{ marginBottom: 0, fontSize: 13 }}>
-                                  {hit.abstract}
-                                </Typography.Paragraph>
-                              )}
-                              <Space size={4} wrap>
-                                <Tag>{hit.source_name ?? hit.source}</Tag>
-                                {hit.doi && <Tag>doi:{hit.doi}</Tag>}
-                                {hit.pdf_url && <Tag color="green">open access PDF</Tag>}
-                              </Space>
-                            </div>
-                            <Space orientation="vertical" align="end">
-                              {(hit.doi || hit.url) && hit.source !== "local" && (
-                                <Button size="small" icon={<PlusOutlined />} disabled={added.has(id)} onClick={() => add(hit)}>
-                                  {added.has(id) ? "Added" : "Add"}
-                                </Button>
-                              )}
-                              {hit.url && (
-                                <Button size="small" type="link" icon={<LinkOutlined />} href={hit.url} target="_blank" rel="noreferrer">
-                                  Open
-                                </Button>
-                              )}
-                            </Space>
-                          </Flex>
-                        </Card>
+                        <PaperHit
+                          key={id}
+                          hit={hit}
+                          actions={
+                            (hit.doi || hit.url) &&
+                            hit.source !== "local" && (
+                              <Button size="small" icon={<PlusOutlined />} disabled={added.has(id)} onClick={() => add(hit)}>
+                                {added.has(id) ? "Added" : "Add"}
+                              </Button>
+                            )
+                          }
+                        />
                       );
                     })}
                   </Flex>

@@ -75,7 +75,7 @@ async def topup(org_id: str, body: TopupBody, request: Request, principal: Princ
     base = ctx(request).settings.public_base_url
     email = principal.user.email if principal.user else ""
     try:
-        url = await stripe.topup_session(access.org, email, body.amount_usd, f"{base}/orgs/{org_id}/billing?paid=1", f"{base}/orgs/{org_id}/billing")
+        url = await stripe.topup_session(access.org, email, body.amount_usd, f"{base}/org/billing?org={org_id}&paid=1", f"{base}/org/billing?org={org_id}")
     except StripeError as exc:
         raise HTTPException(502, str(exc)) from None
     await db.commit()
@@ -95,7 +95,11 @@ async def subscribe(org_id: str, body: SubscribeBody, request: Request, principa
     base = ctx(request).settings.public_base_url
     try:
         url = await stripe.subscription_session(
-            access.org, principal.user.email if principal.user else "", body.plan, f"{base}/orgs/{org_id}/billing?subscribed=1", f"{base}/orgs/{org_id}/billing"
+            access.org,
+            principal.user.email if principal.user else "",
+            body.plan,
+            f"{base}/org/billing?org={org_id}&subscribed=1",
+            f"{base}/org/billing?org={org_id}",
         )
     except StripeError as exc:
         raise HTTPException(400, str(exc)) from None
@@ -133,6 +137,7 @@ async def usage(org_id: str, principal: Principal = Depends(get_principal), db: 
                 func.sum(UsageEvent.input_tokens),
                 func.sum(UsageEvent.output_tokens),
                 func.sum(UsageEvent.cached_tokens),
+                func.sum(UsageEvent.quantity),
                 func.sum(UsageEvent.cost_micros),
             ).group_by(UsageEvent.kind, UsageEvent.model)
         )
@@ -154,9 +159,10 @@ async def usage(org_id: str, principal: Principal = Depends(get_principal), db: 
                 "input_tokens": int(i or 0),
                 "output_tokens": int(o or 0),
                 "cached_tokens": int(c or 0),
+                "seconds": int(q or 0),
                 "cost_usd": _usd(cost),
             }
-            for k, m, n, i, o, c, cost in by_model
+            for k, m, n, i, o, c, q, cost in by_model
         ],
         "by_project": [{"project_id": p, "project_name": names.get(p, "API / other"), "cost_usd": _usd(c), "requests": int(n)} for p, c, n in by_project],
     }
