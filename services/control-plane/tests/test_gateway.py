@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+from pathlib import Path
 
 import httpx
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy import select
 
 from controlplane.gateway import egress
 from controlplane.gateway import router as gateway_router
-from controlplane.gateway.catalog import seed_catalog
+from controlplane.gateway.catalog import seed_catalog, validate_catalog
 from controlplane.gateway.metering import Usage, cost_micros
 from controlplane.models import ModelRoute, Organization, Provider, UsageEvent
 
@@ -109,6 +110,21 @@ async def test_seeded_claude_catalog_prices(cp):
     haiku = routes["claude-haiku-5-5"]
     assert (haiku.input_nanos, haiku.output_nanos, haiku.long_context_tokens, haiku.long_context_multiplier) == (100, 500, 100_000, 5.0)
     assert {"claude-sonnet-5-5", "claude-fable-5-1", "mock", "mock-embedding"} <= set(routes)
+
+
+def test_catalog_prices_are_required():
+    example = json.loads((Path(__file__).resolve().parents[3] / "deploy" / "model_catalog.example.json").read_text())
+    # The example ships without prices so that an operator has to fill them in.
+    with pytest.raises(ValueError, match=r"'gpt-5\.5' needs input_usd_per_mtok, output_usd_per_mtok"):
+        validate_catalog(example)
+    priced = [{**m, "input_usd_per_mtok": 1.0, "output_usd_per_mtok": 2.0} for m in example["models"]]
+    validate_catalog({**example, "models": priced})
+    assert {m["alias"] for m in priced} >= {"gpt-5.5", "text-embedding-3-large"}
+    with pytest.raises(ValueError, match="needs output_usd_per_mtok"):
+        validate_catalog({"models": [{"alias": "x", "provider": "p", "input_usd_per_mtok": 1}]})
+    with pytest.raises(ValueError, match="needs input_usd_per_mtok"):
+        validate_catalog({"models": [{"alias": "e", "provider": "p", "kind": "embedding", "input_usd_per_mtok": None}]})
+    validate_catalog({"models": [{"alias": "e", "provider": "p", "kind": "embedding", "input_usd_per_mtok": 0}]})
 
 
 # ------------------------------------------------------------------- mock

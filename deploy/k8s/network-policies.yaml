@@ -1,0 +1,93 @@
+# Sandboxes run researcher-controlled code. They may only:
+#   * receive connections from the control plane (sandbox agent, port 7000)
+#   * resolve DNS and call the control plane (LLM gateway, literature MCP, datasets)
+#   * reach the public internet (package installs, literature sources)
+# Never other sandboxes, cluster services, the node, private networks or the cloud
+# metadata endpoint. Requires a CNI that enforces NetworkPolicy (Calico, Cilium, ...).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandboxes-default-deny
+  namespace: agentsociety-sandboxes
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandboxes-from-controlplane
+  namespace: agentsociety-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: sandbox
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: agentsociety }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: controlplane }
+      ports:
+        - { protocol: TCP, port: 7000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandboxes-egress
+  namespace: agentsociety-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: sandbox
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: agentsociety }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: controlplane }
+      ports:
+        - { protocol: TCP, port: 8000 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+---
+# The control plane: ingress from the ingress controller (and sandboxes, above);
+# egress anywhere (LLM providers, Stripe, literature APIs, Kubernetes API, database).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: controlplane-ingress
+  namespace: agentsociety
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: controlplane
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: agentsociety-sandboxes }
+          podSelector:
+            matchLabels: { app.kubernetes.io/component: sandbox }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 8000 }

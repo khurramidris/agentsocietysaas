@@ -1,0 +1,24 @@
+# Upper bounds for the whole sandbox namespace; per-organization limits are enforced
+# by the control plane's plans. Size these to your cluster.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandboxes
+  namespace: agentsociety-sandboxes
+spec:
+  hard:
+    pods: "200"
+    persistentvolumeclaims: "2000"
+    requests.storage: 20Ti
+    limits.cpu: "800"
+    limits.memory: 1600Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sandboxes
+  namespace: agentsociety-sandboxes
+spec:
+  limits:
+    - type: PersistentVolumeClaim
+      max: { storage: 200Gi }

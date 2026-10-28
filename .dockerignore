@@ -1,0 +1,21 @@
+# Build contexts are the repository root; send only what the Dockerfiles copy.
+**/.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/dist
+.data
+deploy/**/.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Upstream parts no image needs (the commercial v1 package is never shipped).
+upstream/agentsociety/packages/agentsociety
+upstream/agentsociety/frontend
+upstream/agentsociety/docs
+upstream/agentsociety/static
+upstream/agentsociety/examples

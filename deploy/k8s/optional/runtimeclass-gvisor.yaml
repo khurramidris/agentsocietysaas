@@ -1,0 +1,8 @@
+# Sandboxes under gVisor get a user-space kernel between researcher code and the node.
+# Install runsc + the containerd shim on the sandbox nodes, apply this, and set
+# CP_K8S_RUNTIME_CLASS=gvisor.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc

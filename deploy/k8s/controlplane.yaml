@@ -1,0 +1,107 @@
+# One replica: the control plane holds per-process state (sandbox reaper, usage
+# buffer, rate limits). Scale vertically; see deploy/README.md for scaling out.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlplane
+  namespace: agentsociety
+  labels:
+    app.kubernetes.io/name: controlplane
+    app.kubernetes.io/part-of: agentsociety-saas
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: controlplane
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: controlplane
+        app.kubernetes.io/part-of: agentsociety-saas
+    spec:
+      serviceAccountName: controlplane
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: agentsociety-saas/controlplane:latest
+          args: ["migrate"]
+          envFrom:
+            - configMapRef: { name: controlplane-config }
+            - secretRef: { name: controlplane-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: controlplane
+          image: agentsociety-saas/controlplane:latest
+          args: ["serve"]
+          ports:
+            - { name: http, containerPort: 8000 }
+          envFrom:
+            - configMapRef: { name: controlplane-config }
+            - secretRef: { name: controlplane-secrets }
+          env:
+            - { name: CP_AUTO_MIGRATE, value: "false" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+            - { name: catalog, mountPath: /config, readOnly: true }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: controlplane-data }
+        - name: tmp
+          emptyDir: { sizeLimit: 2Gi }
+        - name: catalog
+          configMap:
+            name: model-catalog
+            optional: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: controlplane-data
+  namespace: agentsociety
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlplane
+  namespace: agentsociety
+  labels:
+    app.kubernetes.io/name: controlplane
+spec:
+  selector:
+    app.kubernetes.io/name: controlplane
+  ports:
+    - { name: http, port: 8000, targetPort: http }

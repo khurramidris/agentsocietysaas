@@ -16,13 +16,16 @@ researcher starts...) must never be reachable from another tenant's sandbox.
   agent port on ``127.0.0.1`` only; they reach the host as ``host.docker.internal``.
 
 Either way, block the cloud metadata endpoint and other host-local services from
-sandbox networks on the host firewall (see deploy/docker/harden-host.sh).
+sandbox networks on the host firewall (see deploy/docker/harden-host.sh). Every
+sandbox network's bridge interface is named ``sbx-...`` so one static rule set
+(``-i sbx+``) covers all of them.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import os
 from typing import Any
 
@@ -33,8 +36,17 @@ LABEL_MANAGED = "agentsociety.managed"
 LABEL_PROJECT = "agentsociety.project"
 
 
+BRIDGE_PREFIX = "sbx-"
+SHARED_BRIDGE = "sbx-shared"
+
+
 def network_name(project_id: str) -> str:
     return f"sbxnet-{project_id.replace('_', '-').lower()}"
+
+
+def bridge_name(project_id: str) -> str:
+    """Host interface name of a project's bridge (Linux allows 15 characters)."""
+    return BRIDGE_PREFIX + hashlib.sha256(project_id.encode()).hexdigest()[:11]
 
 
 class DockerDriver(SandboxDriver):
@@ -84,7 +96,7 @@ class DockerDriver(SandboxDriver):
                 self.client.networks.create(
                     name,
                     driver="bridge",
-                    options={"com.docker.network.bridge.enable_icc": "false"},
+                    options={"com.docker.network.bridge.enable_icc": "false", "com.docker.network.bridge.name": SHARED_BRIDGE},
                     labels={LABEL_MANAGED: "true"},
                 )
             self._shared_network_ready = True
@@ -98,7 +110,12 @@ class DockerDriver(SandboxDriver):
         except Exception as exc:
             if not self._not_found(exc):
                 raise
-            network = self.client.networks.create(name, driver="bridge", labels={LABEL_MANAGED: "true", LABEL_PROJECT: project_id})
+            network = self.client.networks.create(
+                name,
+                driver="bridge",
+                options={"com.docker.network.bridge.name": bridge_name(project_id)},
+                labels={LABEL_MANAGED: "true", LABEL_PROJECT: project_id},
+            )
         me = self._control_plane_container()
         if not me:
             raise RuntimeError(

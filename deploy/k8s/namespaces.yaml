@@ -1,0 +1,20 @@
+# The control plane and the sandboxes live in separate namespaces; both enforce the
+# "restricted" Pod Security Standard (sandbox pods run non-root, read-only root
+# filesystem, no capabilities, RuntimeDefault seccomp).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentsociety
+  labels:
+    app.kubernetes.io/part-of: agentsociety-saas
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentsociety-sandboxes
+  labels:
+    app.kubernetes.io/part-of: agentsociety-saas
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

@@ -1,0 +1,37 @@
+# The control plane creates one Pod and one PersistentVolumeClaim per project in the
+# sandbox namespace, and nothing else: no access to Secrets, Services or other namespaces.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controlplane
+  namespace: agentsociety
+  labels:
+    app.kubernetes.io/name: controlplane
+    app.kubernetes.io/part-of: agentsociety-saas
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-manager
+  namespace: agentsociety-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: controlplane-sandbox-manager
+  namespace: agentsociety-sandboxes
+subjects:
+  - kind: ServiceAccount
+    name: controlplane
+    namespace: agentsociety
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-manager

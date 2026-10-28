@@ -1,0 +1,19 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Web app, API, LLM gateway, MCP and dataset hub.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy controlplane:8000 {
+		# Server-sent events (AI scientist, run logs) must not be buffered.
+		flush_interval -1
+	}
+}
+
+# Browser IDE sessions, on their own origin.
+{$IDE_DOMAIN} {
+	reverse_proxy controlplane:8000 {
+		flush_interval -1
+	}
+}

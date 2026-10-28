@@ -103,9 +103,27 @@ async def seed_catalog(db: AsyncSession, settings: Settings, encryptor: Encrypto
     await db.commit()
 
 
+# Prices an operator must state explicitly: a missing price must never mean "free".
+REQUIRED_PRICES = {"chat": ("input_usd_per_mtok", "output_usd_per_mtok"), "embedding": ("input_usd_per_mtok",)}
+
+
+def validate_catalog(data: dict, source: str = "model catalog") -> None:
+    for model in data.get("models", []):
+        alias = model.get("alias")
+        if not alias or not model.get("provider"):
+            raise ValueError(f"{source}: every model needs an alias and a provider")
+        kind = model.get("kind", "chat")
+        if kind not in REQUIRED_PRICES:
+            raise ValueError(f"{source}: model {alias!r} has unknown kind {kind!r}")
+        missing = [k for k in REQUIRED_PRICES[kind] if isinstance(model.get(k), bool) or not isinstance(model.get(k), int | float) or model[k] < 0]
+        if missing:
+            raise ValueError(f"{source}: model {alias!r} needs {', '.join(missing)} (USD per million tokens; 0 only if it is really free)")
+
+
 async def load_catalog_file(db: AsyncSession, path: Path, encryptor: Encryptor, mult: float) -> None:
     """Load providers/routes from JSON: {"providers": [...], "models": [...]}."""
     data = json.loads(path.read_text(encoding="utf-8"))
+    validate_catalog(data, str(path))
     providers: dict[str, Provider] = {}
     for item in data.get("providers", []):
         key_env = item.get("api_key_env")

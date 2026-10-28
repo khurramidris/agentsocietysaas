@@ -1,0 +1,102 @@
+# Single-host deployment: PostgreSQL, the control plane (driving sandboxes through the
+# host's Docker engine) and Caddy for TLS. See README.md in this directory.
+#
+#   cp .env.example .env            # fill it in
+#   docker compose --profile build build
+#   sudo ./harden-host.sh           # review it first
+#   docker compose up -d
+
+name: agentsociety-saas
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: controlplane
+      POSTGRES_USER: controlplane
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U controlplane -d controlplane"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  controlplane:
+    image: ${CONTROLPLANE_IMAGE:-agentsociety-saas/controlplane:latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/controlplane.Dockerfile
+    container_name: agentsociety-controlplane
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CP_ENVIRONMENT: production
+      CP_DATABASE_URL: postgresql+asyncpg://controlplane:${POSTGRES_PASSWORD}@postgres:5432/controlplane
+      CP_SANDBOX_DRIVER: docker
+      CP_SANDBOX_IMAGE: ${SANDBOX_IMAGE:-agentsociety-saas/sandbox:latest}
+      # Each sandbox gets a private bridge network that this container joins as "controlplane".
+      CP_DOCKER_ACCESS: network
+      CP_DOCKER_CONTROL_PLANE_CONTAINER: agentsociety-controlplane
+      CP_DOCKER_CONTROL_PLANE_ALIAS: controlplane
+      CP_INTERNAL_BASE_URL: http://controlplane:8000
+      CP_MODEL_CATALOG_FILE: ${CP_MODEL_CATALOG_FILE:-}
+      # Only Caddy can reach this port; trust its X-Forwarded-* headers.
+      CP_FORWARDED_ALLOW_IPS: "*"
+    # Driving the Docker engine is root-equivalent on this host: keep the host dedicated
+    # to the platform (see README.md).
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env (getent group docker | cut -d: -f3)}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cpdata:/data
+      - ./config:/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend, edge]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      IDE_DOMAIN: ${IDE_DOMAIN:?set IDE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [controlplane]
+    networks: [edge]
+
+  # Built with `docker compose --profile build build`; started per project by the
+  # control plane, never by compose.
+  sandbox-image:
+    image: ${SANDBOX_IMAGE:-agentsociety-saas/sandbox:latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/sandbox.Dockerfile
+      args:
+        WITH_LATEX: ${SANDBOX_WITH_LATEX:-true}
+        WITH_IDE: ${SANDBOX_WITH_IDE:-true}
+        WITH_TORCH: ${SANDBOX_WITH_TORCH:-false}
+    profiles: [build]
+    entrypoint: ["true"]
+
+volumes:
+  pgdata:
+  cpdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+  edge:

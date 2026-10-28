@@ -1,0 +1,22 @@
+# kubectl apply -k deploy/k8s   (after creating secrets.env from secrets.env.example)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - rbac.yaml
+  - controlplane.yaml
+  - network-policies.yaml
+  - quotas.yaml
+  - ingress.yaml
+configMapGenerator:
+  - name: controlplane-config
+    namespace: agentsociety
+    envs: [config.env]
+secretGenerator:
+  - name: controlplane-secrets
+    namespace: agentsociety
+    envs: [secrets.env]
+images:
+  - name: agentsociety-saas/controlplane
+    newName: agentsociety-saas/controlplane
+    newTag: latest

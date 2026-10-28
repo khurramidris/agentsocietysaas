@@ -1,0 +1,34 @@
+# ingress-nginx with cert-manager; adapt the class and annotations to your controller.
+# The IDE gets its own host (CP_IDE_BASE_URL) so workspace code never runs on the app origin.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: controlplane
+  namespace: agentsociety
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    # Streams (AI scientist, run logs, IDE websockets) and large uploads.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 600m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.example.com, ide.example-ide.com]
+      secretName: controlplane-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: controlplane, port: { name: http } }
+    - host: ide.example-ide.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: controlplane, port: { name: http } }

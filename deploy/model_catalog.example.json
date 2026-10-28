@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "Operator-maintained providers and models for the LLM gateway (CP_MODEL_CATALOG_FILE).",
+    "Claude models are seeded automatically when CP_ANTHROPIC_API_KEY is set; list everything else here.",
+    "Prices are what customers pay, in USD per million tokens, before CP_PRICE_MULTIPLIER. They are left",
+    "null on purpose: look up each provider's current list price, add your margin and fill them in.",
+    "The control plane refuses to start while a price is missing, so a model is never free by accident.",
+    "API keys are read from the environment variables named in api_key_env, never from this file.",
+    "Entries are only added on first sight; change prices later in Admin -> Models & pricing."
+  ],
+  "providers": [
+    { "name": "openai", "kind": "openai", "api_base": "https://api.openai.com/v1", "api_key_env": "CP_OPENAI_API_KEY" },
+    { "name": "self-hosted", "kind": "openai", "api_base": "http://vllm.internal:8000/v1", "api_key_env": "SELF_HOSTED_LLM_API_KEY" }
+  ],
+  "models": [
+    {
+      "alias": "gpt-5.5",
+      "provider": "openai",
+      "kind": "chat",
+      "description": "AgentSociety's default simulation model",
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "cache_read_usd_per_mtok": null
+    },
+    {
+      "alias": "text-embedding-3-large",
+      "provider": "openai",
+      "kind": "embedding",
+      "description": "AgentSociety's default embedding model (1024 dimensions requested)",
+      "input_usd_per_mtok": null
+    },
+    {
+      "alias": "open-weights-chat",
+      "provider": "self-hosted",
+      "upstream_model": "your-served-model-name",
+      "kind": "chat",
+      "description": "An open-weights model served by vLLM, SGLang or any OpenAI-compatible server",
+      "input_usd_per_mtok": null,
+      "output_usd_per_mtok": null,
+      "enabled": false
+    }
+  ]
+}

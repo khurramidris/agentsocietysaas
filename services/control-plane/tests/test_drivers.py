@@ -12,7 +12,7 @@ import pytest
 
 from controlplane.sandboxes import local as local_driver
 from controlplane.sandboxes.base import SandboxSpec
-from controlplane.sandboxes.docker import DockerDriver, network_name
+from controlplane.sandboxes.docker import DockerDriver, bridge_name, network_name
 from controlplane.sandboxes.kubernetes import KubernetesDriver, pod_manifest, pvc_manifest
 from controlplane.settings import Settings
 
@@ -130,6 +130,9 @@ async def test_docker_network_mode_isolates_each_sandbox():
 
     net = engine.networks.items[network_name(PID)]
     assert net.options["labels"]["agentsociety.project"] == PID
+    # The host firewall matches sandbox traffic by bridge name (deploy/docker/harden-host.sh).
+    assert net.options["options"] == {"com.docker.network.bridge.name": bridge_name(PID)}
+    assert bridge_name(PID).startswith("sbx-") and len(bridge_name(PID)) <= 15
     assert net.attached == {"cp-1": ["controlplane"]}  # the control plane joins under its alias
     kw = engine.containers.items[name].kwargs
     assert kw["network"] == network_name(PID) and "ports" not in kw and "extra_hosts" not in kw
@@ -165,7 +168,7 @@ async def test_docker_port_mode_disables_inter_container_traffic():
     info = await driver.start(spec())
     assert info.endpoint == "http://127.0.0.1:49153"
     shared = engine.networks.items["agentsociety-sandboxes"]
-    assert shared.options["options"] == {"com.docker.network.bridge.enable_icc": "false"}
+    assert shared.options["options"] == {"com.docker.network.bridge.enable_icc": "false", "com.docker.network.bridge.name": "sbx-shared"}
     kw = engine.containers.items[spec().name].kwargs
     assert kw["ports"] == {"7000/tcp": ("127.0.0.1", None)}  # never published beyond loopback
     assert kw["extra_hosts"] == {"host.docker.internal": "host-gateway"}
