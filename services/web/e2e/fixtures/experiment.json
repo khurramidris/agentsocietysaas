@@ -1,0 +1,83 @@
+{
+  "init_config": {
+    "env_modules": [
+      {
+        "module_type": "SimpleSocialSpace",
+        "kwargs": {
+          "agent_id_name_pairs": [
+            [
+              1,
+              "Alice"
+            ],
+            [
+              2,
+              "Bob"
+            ],
+            [
+              3,
+              "Carol"
+            ]
+          ]
+        }
+      }
+    ],
+    "agents": [
+      {
+        "agent_id": 1,
+        "agent_type": "PersonAgent",
+        "kwargs": {
+          "id": 1,
+          "name": "Alice",
+          "age": 34,
+          "occupation": "teacher"
+        }
+      },
+      {
+        "agent_id": 2,
+        "agent_type": "PersonAgent",
+        "kwargs": {
+          "id": 2,
+          "name": "Bob",
+          "age": 51,
+          "occupation": "farmer"
+        }
+      },
+      {
+        "agent_id": 3,
+        "agent_type": "PersonAgent",
+        "kwargs": {
+          "id": 3,
+          "name": "Carol",
+          "age": 23,
+          "occupation": "student"
+        }
+      }
+    ]
+  },
+  "steps": {
+    "start_t": "2026-01-01T08:00:00",
+    "steps": [
+      {
+        "type": "run",
+        "num_steps": 2,
+        "tick": 3600
+      },
+      {
+        "type": "ask",
+        "question": "How do people in this town feel about the new policy?"
+      },
+      {
+        "type": "questionnaire",
+        "questionnaire_id": "q1",
+        "title": "Trust",
+        "questions": [
+          {
+            "id": "trust",
+            "prompt": "How much do you trust your neighbours (1-5)?",
+            "response_type": "integer"
+          }
+        ]
+      }
+    ]
+  }
+}

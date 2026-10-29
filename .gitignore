@@ -38,3 +38,6 @@ dist/
 test-results/
 playwright-report/
 deploy/k8s/secrets.env
+
+# End-to-end test screenshots
+services/web/e2e-artifacts/
